@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# wm — workspace-meta helper: coordinate the sibling repositories of the workspace.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+WORKSPACE_META="$(dirname -- "$SCRIPT_DIR")"
+WORKSPACE_ROOT="$(dirname -- "$WORKSPACE_META")"
+ORG="${WM_ORG:-marini-didattica}"
+
+die() { printf 'wm: %s\n' "$*" >&2; exit 1; }
+
+require() {
+  command -v "$1" >/dev/null 2>&1 || die "missing dependency '$1'${2:+ — $2}"
+}
+
+highlight() { gum style --bold --foreground 212 -- "$1"; }
+
+usage() {
+  cat <<EOF
+wm — workspace-meta helper (workspace root: $WORKSPACE_ROOT)
+
+Usage:
+  wm git clone     Clone repositories from $ORG
+  wm help          Show this help
+EOF
+}
+
+# Names of the git repositories found next to workspace-meta.
+local_repos() {
+  local dir name
+  for dir in "$WORKSPACE_ROOT"/*/; do
+    [ -e "$dir/.git" ] || continue
+    name="$(basename -- "$dir")"
+    printf '%s\n' "$name"
+  done
+}
+
+# Names of the repositories in the GitHub organization.
+org_repos() {
+  gh repo list "$ORG" --limit 1000 --json name --jq '.[].name' | sort
+}
+
+cmd_git_clone() {
+  require gum "install it from https://github.com/charmbracelet/gum"
+  require gh "install it from https://cli.github.com"
+  gh auth status >/dev/null 2>&1 || die "gh is not authenticated — run 'gh auth login'"
+
+  local -a repos
+  mapfile -t repos < <(org_repos)
+  ((${#repos[@]})) || die "no repositories found in organization '$ORG'"
+
+  # Default selection: everything except workspace-meta.
+  local r
+  local -a defaults=()
+  for r in "${repos[@]}"; do
+    [ "$r" = "workspace-meta" ] || defaults+=("$r")
+  done
+
+  local -a sel_args=()
+  if ((${#defaults[@]})); then
+    sel_args=(--selected "$(IFS=,; printf '%s' "${defaults[*]}")")
+  fi
+
+  local picks
+  picks="$(gum choose --no-limit "${sel_args[@]}" --header "Clone from $ORG" -- "${repos[@]}")" || exit 0
+  [ -n "$picks" ] || exit 0
+
+  local -a chosen
+  mapfile -t chosen <<< "$picks"
+
+  local dir list=""
+  dir="$(pwd)"
+  for r in "${chosen[@]}"; do
+    list+="  - $r"$'\n'
+  done
+  gum confirm "The following repos will be cloned in $dir:"$'\n\n'"$list" || exit 0
+
+  for r in "${chosen[@]}"; do
+    highlight "==> $r"
+    gh repo clone "$ORG/$r" || true
+  done
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+  case "$cmd" in
+    git)
+      local sub="${1:-}"
+      shift || true
+      case "$sub" in
+        clone) cmd_git_clone "$@" ;;
+        *) usage >&2; exit 1 ;;
+      esac
+      ;;
+    ""|-h|--help|help) usage ;;
+    *) die "unknown command '$cmd' (try 'wm help')" ;;
+  esac
+}
+
+main "$@"
