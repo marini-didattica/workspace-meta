@@ -15,7 +15,7 @@ slide-prime, slide-seconde, extra-slides, misc all have github actions deploing 
 # Workflows
 The vast majority of work will be slide creation. Changes should target the ecosystem as a whole; if I require to update the look of something that should be put in the theme repo; if a new component is needed, then put it in the addons repo if that makes sense.
 
-Each slidev deck can be started with `cd slidev-project && bun run dev src/deck-name/0-main.md -p <port>. User ports from 3130 on
+You should start the server corresponding to each deck when needed with `cd <slidev-project> && bun run dev src/<deck-name>/0-main.md -p <port>. User ports from 3130 on
 
 When a multi deck modification is needed you can start multiple servers in parallel
 
