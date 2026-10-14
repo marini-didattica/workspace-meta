@@ -1,12 +1,16 @@
 {
 	"$schema": "https://opencode.ai/config.json",
+	"instructions": ["./AGENTS.md"],
 
 	"lsp": true,
 
 	"mcp": {
 		"code-graph": {
 			"type": "local",
-			"command": ["bunx", "-y", "@sdsrs/code-graph"]
+			"command": ["bunx", "-y", "@sdsrs/code-graph@latest"],
+			"environment": {
+				"CODE_GRAPH_FORCE_PLUGIN_MCP": "1"
+			}
 		},
 
 		"chrome-devtools": {
@@ -22,10 +26,15 @@
 			]
 		},
 
-		"slidev": {
-			"type": "remote",
-			"url": "http://localhost:3030/__mcp"
+		"context7": {
+			"type": "local",
+			"command": ["bunx", "-y", "@upstash/context7-mcp"]
 		}
+
+		// "slidev": {
+		// 	"type": "remote",
+		// 	"url": "http://localhost:3030/__mcp"
+		// }
 	},
 
 	"permission": {
