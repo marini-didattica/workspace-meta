@@ -21,6 +21,8 @@ wm — workspace-meta helper (workspace root: $WORKSPACE_ROOT)
 
 Usage:
   wm git clone     Clone repositories from $ORG
+  wm git status    Run git status in the local repositories
+  wm foreach       Run a command in each local repository
   wm help          Show this help
 EOF
 }
@@ -81,6 +83,46 @@ cmd_git_clone() {
   done
 }
 
+cmd_git_status() {
+  require gum "install it from https://github.com/charmbracelet/gum"
+
+  local -a repos
+  mapfile -t repos < <(local_repos)
+  ((${#repos[@]})) || die "no local repositories found in $WORKSPACE_ROOT"
+
+  local picks
+  picks="$(gum choose --no-limit --selected '*' --header "git status" -- "${repos[@]}")" || exit 0
+  [ -n "$picks" ] || exit 0
+
+  local r
+  while IFS= read -r r; do
+    highlight "==> $r"
+    git -C "$WORKSPACE_ROOT/$r" status || true
+  done <<< "$picks"
+}
+
+cmd_foreach() {
+  require gum "install it from https://github.com/charmbracelet/gum"
+
+  local -a repos
+  mapfile -t repos < <(local_repos)
+  ((${#repos[@]})) || die "no local repositories found in $WORKSPACE_ROOT"
+
+  local picks
+  picks="$(gum choose --no-limit --selected '*' --header "Repositories" -- "${repos[@]}")" || exit 0
+  [ -n "$picks" ] || exit 0
+
+  local command
+  command="$(gum input --header "Command to run in each repository" --placeholder "e.g. git fetch --all")" || exit 0
+  [ -n "$command" ] || die "no command provided"
+
+  local r
+  while IFS= read -r r; do
+    highlight "==> $r"
+    (cd "$WORKSPACE_ROOT/$r" && bash -c "$command") || true
+  done <<< "$picks"
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
@@ -90,9 +132,11 @@ main() {
       shift || true
       case "$sub" in
         clone) cmd_git_clone "$@" ;;
+        status) cmd_git_status "$@" ;;
         *) usage >&2; exit 1 ;;
       esac
       ;;
+    foreach) cmd_foreach "$@" ;;
     ""|-h|--help|help) usage ;;
     *) die "unknown command '$cmd' (try 'wm help')" ;;
   esac
