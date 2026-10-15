@@ -23,6 +23,7 @@ Usage:
   wm git clone     Clone repositories from $ORG
   wm git status    Run git status in the local repositories
   wm foreach       Run a command in each local repository
+  wm deps bump-git-deps  Update the in-house slidev deps in the local repositories
   wm help          Show this help
 EOF
 }
@@ -123,6 +124,45 @@ cmd_foreach() {
   done <<< "$picks"
 }
 
+# Repositories whose package.json depends on the in-house slidev theme/addons.
+slide_repos() {
+  local r
+  for r in "$@"; do
+    grep -qE '"marini-slidev-(theme|addons)"[[:space:]]*:' "$WORKSPACE_ROOT/$r/package.json" 2>/dev/null && printf '%s\n' "$r"
+  done
+}
+
+cmd_deps_bump_git_deps() {
+  require gum "install it from https://github.com/charmbracelet/gum"
+
+  local -a repos
+  mapfile -t repos < <(local_repos)
+  ((${#repos[@]})) || die "no local repositories found in $WORKSPACE_ROOT"
+
+  # Default selection: the repositories using the marini-slidev-* dependencies.
+  local r
+  local -a defaults=()
+  mapfile -t defaults < <(slide_repos "${repos[@]}")
+
+  local -a sel_args=()
+  if ((${#defaults[@]})); then
+    sel_args=(--selected "$(IFS=,; printf '%s' "${defaults[*]}")")
+  fi
+
+  local picks
+  picks="$(gum choose --no-limit "${sel_args[@]}" --header "Repositories to update" -- "${repos[@]}")" || exit 0
+  [ -n "$picks" ] || exit 0
+
+  local command
+  command="$(gum input --header "Command to run in each repository" --value "bun update marini-slidev-theme marini-slidev-addons")" || exit 0
+  [ -n "$command" ] || die "no command provided"
+
+  while IFS= read -r r; do
+    highlight "==> $r"
+    (cd "$WORKSPACE_ROOT/$r" && bash -c "$command") || true
+  done <<< "$picks"
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
@@ -137,6 +177,14 @@ main() {
       esac
       ;;
     foreach) cmd_foreach "$@" ;;
+    deps)
+      local sub="${1:-}"
+      shift || true
+      case "$sub" in
+        bump-git-deps) cmd_deps_bump_git_deps "$@" ;;
+        *) usage >&2; exit 1 ;;
+      esac
+      ;;
     ""|-h|--help|help) usage ;;
     *) die "unknown command '$cmd' (try 'wm help')" ;;
   esac
