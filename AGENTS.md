@@ -5,8 +5,8 @@ This is a multi-repo workspace for school material. The repositories live side b
 ├── seconde: slidev slide decks (Seconde class)
 ├── extra-slides: extra slidev slide decks
 ├── misc: misc materials, mainly typst documents
-├── slidev-theme: slidev theme (slidev-theme-russell) used by every deck
-├── slidev-addons: slidev addons (slidev-addons-russell) used by every deck
+├── slidev-theme: slidev theme (marini-slidev-theme) used by every deck
+├── slidev-addons: slidev addons (marini-slidev-addons) used by every deck
 ├── slide-site: astro dashboard linking the published slides and material
 └── workspace-meta: scripts and configuration coordinating the multi-repo agentic workflow
 
