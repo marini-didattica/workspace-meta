@@ -154,7 +154,7 @@ cmd_deps_bump_git_deps() {
   [ -n "$picks" ] || exit 0
 
   local command
-  command="$(gum input --header "Command to run in each repository" --value "bun update marini-slidev-theme marini-slidev-addons")" || exit 0
+  command="$(gum input --header "Command to run in each repository" --value "bun update marini-slidev-theme marini-slidev-addons && git add --all && git commit -m'chore: bumped git deps' && git push")" || exit 0
   [ -n "$command" ] || die "no command provided"
 
   while IFS= read -r r; do
