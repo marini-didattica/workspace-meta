@@ -23,7 +23,8 @@ Usage:
   wm git clone     Clone repositories from $ORG
   wm git status    Run git status in the local repositories
   wm foreach       Run a command in each local repository
-  wm deps bump-git-deps  Update the in-house slidev deps in the local repositories
+  wm deps bump-slidev  Update the in-house slidev deps in the local repositories
+  wm deps bump-typst   Update the shared typst submodules, then commit and push
   wm help          Show this help
 EOF
 }
@@ -132,7 +133,15 @@ slide_repos() {
   done
 }
 
-cmd_deps_bump_git_deps() {
+# Repositories using the shared typst theme/components as git submodules.
+typst_repos() {
+  local r
+  for r in "$@"; do
+    grep -qE 'typst-(theme|components)' "$WORKSPACE_ROOT/$r/.gitmodules" 2>/dev/null && printf '%s\n' "$r"
+  done
+}
+
+cmd_deps_bump_slidev() {
   require gum "install it from https://github.com/charmbracelet/gum"
 
   local -a repos
@@ -163,6 +172,37 @@ cmd_deps_bump_git_deps() {
   done <<< "$picks"
 }
 
+cmd_deps_bump_typst() {
+  require gum "install it from https://github.com/charmbracelet/gum"
+
+  local -a repos
+  mapfile -t repos < <(local_repos)
+  ((${#repos[@]})) || die "no local repositories found in $WORKSPACE_ROOT"
+
+  # Default selection: the repositories using the typst theme/components submodules.
+  local r
+  local -a defaults=()
+  mapfile -t defaults < <(typst_repos "${repos[@]}")
+
+  local -a sel_args=()
+  if ((${#defaults[@]})); then
+    sel_args=(--selected "$(IFS=,; printf '%s' "${defaults[*]}")")
+  fi
+
+  local picks
+  picks="$(gum choose --no-limit "${sel_args[@]}" --header "Repositories to update" -- "${repos[@]}")" || exit 0
+  [ -n "$picks" ] || exit 0
+
+  local command
+  command="$(gum input --header "Command to run in each repository" --value "git submodule update --remote --merge --recursive && git submodule foreach --quiet 'cd \"\$toplevel\" && git add -- \"\$displaypath\"' && if ! git diff --cached --quiet; then git commit -m 'chore: bump typst deps' && git push; fi")" || exit 0
+  [ -n "$command" ] || die "no command provided"
+
+  while IFS= read -r r; do
+    highlight "==> $r"
+    (cd "$WORKSPACE_ROOT/$r" && bash -c "$command") || true
+  done <<< "$picks"
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
@@ -181,7 +221,8 @@ main() {
       local sub="${1:-}"
       shift || true
       case "$sub" in
-        bump-git-deps) cmd_deps_bump_git_deps "$@" ;;
+        bump-slidev) cmd_deps_bump_slidev "$@" ;;
+        bump-typst) cmd_deps_bump_typst "$@" ;;
         *) usage >&2; exit 1 ;;
       esac
       ;;

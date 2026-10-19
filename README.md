@@ -37,6 +37,8 @@ source ~/workspace-meta/activate.fish
 wm git clone     # pick repos from the GitHub org, confirm, clone them here
 wm git status    # run `git status` in the repositories you select
 wm foreach       # run a command in the repositories you select
+wm deps bump-slidev  # update the in-house slidev theme/addons git deps
+wm deps bump-typst   # update the typst theme/components submodules, commit and push
 ```
 
 - `git clone` lists the repositories of the `marini-didattica` organization
