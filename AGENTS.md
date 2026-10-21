@@ -4,13 +4,15 @@ This is a multi-repo workspace for school material. The repositories live side b
 ├── prime: slidev slide decks (Prime class)
 ├── seconde: slidev slide decks (Seconde class)
 ├── extra-slides: extra slidev slide decks
-├── misc: misc materials, mainly typst documents
+├── materiale: unified public/reserved material host and file browser (replaces misc + riservato)
+├── misc: legacy public typst documents, superseded by materiale
+├── riservato: legacy reserved material, superseded by materiale
 ├── slidev-theme: slidev theme (marini-slidev-theme) used by every deck
 ├── slidev-addons: slidev addons (marini-slidev-addons) used by every deck
 ├── slide-site: astro dashboard linking the published slides and material
 └── workspace-meta: scripts and configuration coordinating the multi-repo agentic workflow
 
-Deck repos consume slidev-theme and slidev-addons as npm git dependencies. prime, seconde, extra-slides and misc ship GitHub Actions workflows that build their artifact and deploy it to GitHub Pages; slide-site links to the published artifacts.
+Deck repos consume slidev-theme and slidev-addons as npm git dependencies. prime, seconde, extra-slides and materiale ship GitHub Actions workflows that build their artifact and deploy it to GitHub Pages; slide-site links to the published artifacts. New public or reserved material belongs in materiale, under `content/raw/{public,private}`; don't add content to the legacy misc/riservato repos.
 
 Source `workspace-meta/activate.fish` once per shell: it exports `OPENCODE_CONFIG` / `OPENCODE_CONFIG_DIR` and prepends `bin/` to `PATH`.
 
