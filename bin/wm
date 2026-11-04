@@ -25,6 +25,8 @@ Usage:
   wm foreach       Run a command in each local repository
   wm deps bump-slidev  Update the in-house slidev deps in the local repositories
   wm deps bump-typst   Update the shared typst submodules, then commit and push
+  wm exam watch-corrections [correzioni-dir] [--out out-dir]
+                    Generate correction stubs and watch them with typst
   wm help          Show this help
 EOF
 }
@@ -203,6 +205,149 @@ cmd_deps_bump_typst() {
   done <<< "$picks"
 }
 
+# Escape a value for use inside a Typst string literal.
+typst_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+# Find the project root containing the shared typst-components package.
+typst_root_for() {
+  local dir="$1"
+  while :; do
+    if [ -d "$dir/typst-components" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    [ "$dir" = "/" ] && break
+    dir="$(dirname -- "$dir")"
+  done
+  return 1
+}
+
+# Generate one Typst stub per correction JSON and watch all of them.
+cmd_exam_watch_corrections() {
+  require typst "install it from https://typst.app"
+
+  local out="/tmp/marini-didattica/exams"
+  local src=""
+
+  while (($#)); do
+    case "$1" in
+      --out)
+        (($# >= 2)) || die "--out requires a directory"
+        out="$2"
+        shift 2
+        ;;
+      --out=*)
+        out="${1#--out=}"
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      --)
+        shift
+        while (($#)); do
+          [ -z "$src" ] || die "exam watch-corrections accepts at most one corrections directory"
+          src="$1"
+          shift
+        done
+        ;;
+      -*)
+        die "unknown option '$1' for exam watch-corrections"
+        ;;
+      *)
+        [ -z "$src" ] || die "exam watch-corrections accepts at most one corrections directory"
+        src="$1"
+        shift
+        ;;
+    esac
+  done
+
+  if [ -z "$src" ]; then
+    if [ -d "./correzioni" ]; then
+      src="./correzioni"
+    else
+      src="."
+    fi
+  fi
+  [ -d "$src" ] || die "corrections directory not found: $src"
+
+  local src_abs out_abs
+  src_abs="$(cd -- "$src" && pwd)"
+  mkdir -p -- "$out"
+  out_abs="$(cd -- "$out" && pwd)"
+
+  local root
+  root="$(typst_root_for "$src_abs")" || die "no typst-components directory found above $src_abs"
+  local package="$root/typst-components/src/correction.typ"
+  [ -f "$package" ] || die "correction entrypoint not found: $package"
+
+  local typ_dir="$out_abs/typ"
+  local pdf_dir="$out_abs/pdf"
+  mkdir -p -- "$typ_dir" "$pdf_dir"
+
+  # Remove stale generated stubs so the output reflects the current source.
+  find "$typ_dir" -maxdepth 1 -type f -name '*.typ' -delete
+
+  shopt -s nullglob
+  local files=("$src_abs"/*.json)
+  shopt -u nullglob
+
+  local -a stubs=()
+  local -a pdfs=()
+  local json name stub pdf template
+  template="$(typst_escape "$package")"
+
+  for json in "${files[@]}"; do
+    if ! grep -q '"test-json"' "$json" || ! grep -q '"exercises"' "$json"; then
+      printf 'wm: skipping %s (not a correction descriptor)\n' "$json" >&2
+      continue
+    fi
+
+    name="$(basename -- "$json" .json)"
+    stub="$typ_dir/$name.typ"
+    pdf="$pdf_dir/$name.pdf"
+
+    {
+      printf '#import "%s": render-correction\n\n' "$template"
+      printf '#render-correction(path("%s"))\n' "$(typst_escape "$json")"
+    } >"$stub"
+
+    stubs+=("$stub")
+    pdfs+=("$pdf")
+  done
+
+  ((${#stubs[@]})) || die "no correction descriptors found in $src_abs"
+
+  printf 'Watching %d correction file(s)\n' "${#stubs[@]}"
+  printf '  typ: %s\n  pdf: %s\n' "$typ_dir" "$pdf_dir"
+
+  local -a pids=()
+  local i
+  for i in "${!stubs[@]}"; do
+    typst watch --root / "${stubs[$i]}" "${pdfs[$i]}" &
+    pids+=("$!")
+  done
+
+  cleanup() {
+    local pid
+    for pid in "${pids[@]}"; do
+      kill "$pid" 2>/dev/null || true
+    done
+    wait 2>/dev/null || true
+  }
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  wait || true
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
@@ -217,6 +362,14 @@ main() {
       esac
       ;;
     foreach) cmd_foreach "$@" ;;
+    exam)
+      local sub="${1:-}"
+      shift || true
+      case "$sub" in
+        watch-corrections) cmd_exam_watch_corrections "$@" ;;
+        *) usage >&2; exit 1 ;;
+      esac
+      ;;
     deps)
       local sub="${1:-}"
       shift || true
