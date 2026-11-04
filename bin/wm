@@ -29,6 +29,10 @@ Usage:
                     Generate correction stubs and watch them with typst
   wm exam deploy <exam-dir> [--force]
                     Deploy corrections and answers to student private folders
+  wm students collect -f <name> --src <dir> --dest <dir> [--move]
+                    Collect one file/folder from each student
+  wm students delete -f <name> --src <dir>
+                    Delete one file/folder from each student
   wm help          Show this help
 EOF
 }
@@ -533,6 +537,233 @@ EOF
   printf 'Deployed %d file(s), skipped %d existing file(s).\n' "$deployed" "$skipped"
 }
 
+# Resolve a students source directory. Relative paths first resolve from the
+# current directory, then from materiale/content/raw, then from the workspace.
+resolve_students_src() {
+  local src="$1"
+  if [[ "$src" == /* ]]; then
+    [ -d "$src" ] && (cd -- "$src" && pwd -P)
+    return
+  fi
+  if [ -d "$src" ]; then
+    (cd -- "$src" && pwd -P)
+    return
+  fi
+  local candidate="$WORKSPACE_ROOT/materiale/content/raw/$src"
+  if [ -d "$candidate" ]; then
+    (cd -- "$candidate" && pwd -P)
+    return
+  fi
+  candidate="$WORKSPACE_ROOT/$src"
+  if [ -d "$candidate" ]; then
+    (cd -- "$candidate" && pwd -P)
+    return
+  fi
+  return 1
+}
+
+# Read the common -f/--src options for the student commands.
+students_parse_src_file() {
+  local expect_dest="$1"
+  shift
+
+  STUDENTS_FILE=""
+  STUDENTS_SRC=""
+  STUDENTS_DEST=""
+  STUDENTS_MOVE=0
+
+  while (($#)); do
+    case "$1" in
+      -f|--file|--name)
+        (($# >= 2)) || die "$1 requires a value"
+        STUDENTS_FILE="$2"
+        shift 2
+        ;;
+      --src)
+        (($# >= 2)) || die "--src requires a directory"
+        STUDENTS_SRC="$2"
+        shift 2
+        ;;
+      --src=*)
+        STUDENTS_SRC="${1#--src=}"
+        shift
+        ;;
+      --dest)
+        [ "$expect_dest" -eq 1 ] || die "--dest is only valid for students collect"
+        (($# >= 2)) || die "--dest requires a directory"
+        STUDENTS_DEST="$2"
+        shift 2
+        ;;
+      --dest=*)
+        [ "$expect_dest" -eq 1 ] || die "--dest is only valid for students collect"
+        STUDENTS_DEST="${1#--dest=}"
+        shift
+        ;;
+      --move)
+        [ "$expect_dest" -eq 1 ] || die "--move is only valid for students collect"
+        STUDENTS_MOVE=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      --)
+        shift
+        (($# == 0)) || die "unexpected argument: $1"
+        ;;
+      -*)
+        die "unknown option '$1'"
+        ;;
+      *)
+        die "unexpected argument: $1"
+        ;;
+    esac
+  done
+
+  [ -n "$STUDENTS_FILE" ] || die "missing -f <file-name>"
+  [ -n "$STUDENTS_SRC" ] || die "missing --src <source>"
+  [ "$expect_dest" -eq 0 ] || [ -n "$STUDENTS_DEST" ] || die "missing --dest <destination>"
+
+  STUDENTS_FILE="${STUDENTS_FILE%/}"
+  case "$STUDENTS_FILE" in
+    ""|/*|*..*)
+      die "invalid file/folder name: $STUDENTS_FILE"
+      ;;
+  esac
+}
+
+# Fill STUDENT_NAMES/STUDENT_ITEMS with the matching student entries.
+students_find_items() {
+  local src_abs="$1"
+  local file="$2"
+  local total=0
+  local dir student item
+
+  STUDENT_NAMES=()
+  STUDENT_ITEMS=()
+  for dir in "$src_abs"/*/; do
+    [ -d "$dir" ] || continue
+    total=$((total + 1))
+    student="$(basename -- "${dir%/}")"
+    item="${dir%/}/$file"
+    if [ -e "$item" ]; then
+      STUDENT_NAMES+=("$student")
+      STUDENT_ITEMS+=("$item")
+    fi
+  done
+  STUDENTS_TOTAL="$total"
+}
+
+cmd_students_collect() {
+  require gum "install it from https://github.com/charmbracelet/gum"
+
+  students_parse_src_file 1 "$@"
+
+  local src_abs dest_abs
+  src_abs="$(resolve_students_src "$STUDENTS_SRC")" || die "source directory not found: $STUDENTS_SRC"
+  dest_abs="$(realpath -m -- "$STUDENTS_DEST")"
+
+  students_find_items "$src_abs" "$STUDENTS_FILE"
+
+  if ((${#STUDENT_ITEMS[@]} == 0)); then
+    printf 'No %s entries found under %s.\n' "$STUDENTS_FILE" "$src_abs"
+    return 0
+  fi
+
+  local action="copy"
+  local past="Copied"
+  if [ "$STUDENTS_MOVE" -eq 1 ]; then
+    action="move"
+    past="Moved"
+  fi
+
+  local prompt
+  prompt="$(printf 'About to %s %d/%d item(s):' "$action" "${#STUDENT_ITEMS[@]}" "$STUDENTS_TOTAL")"
+  prompt+=$'\n\n'
+  local i dst
+  for i in "${!STUDENT_ITEMS[@]}"; do
+    dst="$dest_abs/$STUDENTS_FILE/${STUDENT_NAMES[$i]}"
+    prompt+="$(printf '  %s: %s -> %s' "${STUDENT_NAMES[$i]}" "${STUDENT_ITEMS[$i]}" "$dst")"$'\n'
+  done
+
+  if ! gum confirm --affirmative "Proceed" --negative "Cancel" "$prompt"; then
+    printf 'Cancelled.\n'
+    return 0
+  fi
+
+  local success=0 src_item dst_item
+  for i in "${!STUDENT_ITEMS[@]}"; do
+    src_item="${STUDENT_ITEMS[$i]}"
+    dst_item="$dest_abs/$STUDENTS_FILE/${STUDENT_NAMES[$i]}"
+    mkdir -p -- "$(dirname -- "$dst_item")"
+    rm -rf -- "$dst_item"
+
+    if [ "$STUDENTS_MOVE" -eq 1 ]; then
+      if mv -- "$src_item" "$dst_item"; then
+        success=$((success + 1))
+      else
+        printf 'wm: failed to move %s\n' "$src_item" >&2
+      fi
+    elif [ -d "$src_item" ]; then
+      mkdir -p -- "$dst_item"
+      if cp -a -- "$src_item/." "$dst_item/"; then
+        success=$((success + 1))
+      else
+        printf 'wm: failed to copy %s\n' "$src_item" >&2
+      fi
+    else
+      if cp -a -- "$src_item" "$dst_item"; then
+        success=$((success + 1))
+      else
+        printf 'wm: failed to copy %s\n' "$src_item" >&2
+      fi
+    fi
+  done
+
+  printf '%s %d/%d item(s) successfully.\n' "$past" "$success" "$STUDENTS_TOTAL"
+}
+
+cmd_students_delete() {
+  require gum "install it from https://github.com/charmbracelet/gum"
+
+  students_parse_src_file 0 "$@"
+
+  local src_abs
+  src_abs="$(resolve_students_src "$STUDENTS_SRC")" || die "source directory not found: $STUDENTS_SRC"
+
+  students_find_items "$src_abs" "$STUDENTS_FILE"
+
+  if ((${#STUDENT_ITEMS[@]} == 0)); then
+    printf 'No %s entries found under %s.\n' "$STUDENTS_FILE" "$src_abs"
+    return 0
+  fi
+
+  local prompt
+  prompt="$(printf 'About to delete %d/%d item(s):' "${#STUDENT_ITEMS[@]}" "$STUDENTS_TOTAL")"
+  prompt+=$'\n\n'
+  local i
+  for i in "${!STUDENT_ITEMS[@]}"; do
+    prompt+="$(printf '  %s: %s' "${STUDENT_NAMES[$i]}" "${STUDENT_ITEMS[$i]}")"$'\n'
+  done
+
+  if ! gum confirm --affirmative "Delete" --negative "Cancel" "$prompt"; then
+    printf 'Cancelled.\n'
+    return 0
+  fi
+
+  local success=0
+  for i in "${!STUDENT_ITEMS[@]}"; do
+    if rm -rf -- "${STUDENT_ITEMS[$i]}"; then
+      success=$((success + 1))
+    else
+      printf 'wm: failed to delete %s\n' "${STUDENT_ITEMS[$i]}" >&2
+    fi
+  done
+
+  printf 'Deleted %d/%d item(s) successfully.\n' "$success" "$STUDENTS_TOTAL"
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
@@ -553,6 +784,15 @@ main() {
       case "$sub" in
         watch-corrections) cmd_exam_watch_corrections "$@" ;;
         deploy) cmd_exam_deploy "$@" ;;
+        *) usage >&2; exit 1 ;;
+      esac
+      ;;
+    students)
+      local sub="${1:-}"
+      shift || true
+      case "$sub" in
+        collect) cmd_students_collect "$@" ;;
+        delete) cmd_students_delete "$@" ;;
         *) usage >&2; exit 1 ;;
       esac
       ;;

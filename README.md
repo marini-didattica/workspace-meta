@@ -43,6 +43,10 @@ wm exam watch-corrections [correzioni-dir] [--out out-dir]
                      # generate and watch JSON correction PDFs
 wm exam deploy <exam-dir> [--force]
                      # deploy corrections and answers to student private folders
+wm students collect -f <name> --src <dir> --dest <dir> [--move]
+                     # collect one file/folder from every student
+wm students delete -f <name> --src <dir>
+                     # delete one file/folder from every student
 ```
 
 - `git clone` lists the repositories of the `marini-didattica` organization
@@ -57,6 +61,13 @@ wm exam deploy <exam-dir> [--force]
   `content/raw/private/<class>/<student>/<exam>/`, generating
   `correzione.typ` and `le-tue-risposte/`. Existing files are left untouched
   unless `--force` is passed.
+- `students collect` looks for `<student>/<name>` under `--src` and copies (or
+  moves with `--move`) each match to `<dest>/<name>/<student>`. Relative
+  `--src` paths first resolve from the current directory, then from
+  `materiale/content/raw`, then from the workspace root.
+- `students delete` removes every `<student>/<name>` under `--src`. Both
+  student commands print the full list and ask for confirmation before making
+  changes, then report successful matches out of the total student folders.
 
 ## Dependencies
 
