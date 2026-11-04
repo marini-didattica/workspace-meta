@@ -27,6 +27,8 @@ Usage:
   wm deps bump-typst   Update the shared typst submodules, then commit and push
   wm exam watch-corrections [correzioni-dir] [--out out-dir]
                     Generate correction stubs and watch them with typst
+  wm exam deploy <exam-dir> [--force]
+                    Deploy corrections and answers to student private folders
   wm help          Show this help
 EOF
 }
@@ -348,6 +350,189 @@ cmd_exam_watch_corrections() {
   wait || true
 }
 
+# Find the materiale repository root (contains content/students.json).
+materiale_root_for() {
+  local dir="$1"
+  while :; do
+    if [ -f "$dir/content/students.json" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    [ "$dir" = "/" ] && break
+    dir="$(dirname -- "$dir")"
+  done
+  return 1
+}
+
+# Resolve a descriptor path: relative to its JSON, or to the repo root.
+descriptor_path() {
+  local base="$1"
+  local value="$2"
+  local root="$3"
+  if [[ "$value" == /* ]]; then
+    realpath -m -- "$root$value"
+  else
+    (cd -- "$base" && realpath -m -- "$value")
+  fi
+}
+
+# Deploy correction descriptors and student answers into each private area.
+cmd_exam_deploy() {
+  require jq "install it from https://jqlang.github.io/jq/"
+
+  local force=0
+  local exam=""
+
+  while (($#)); do
+    case "$1" in
+      --force|-f)
+        force=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      --)
+        shift
+        while (($#)); do
+          [ -z "$exam" ] || die "exam deploy accepts exactly one exam directory"
+          exam="$1"
+          shift
+        done
+        ;;
+      -*)
+        die "unknown option '$1' for exam deploy"
+        ;;
+      *)
+        [ -z "$exam" ] || die "exam deploy accepts exactly one exam directory"
+        exam="$1"
+        shift
+        ;;
+    esac
+  done
+
+  [ -n "$exam" ] || die "usage: wm exam deploy <exam-dir> [--force]"
+  [ -d "$exam" ] || die "exam directory not found: $exam"
+
+  local exam_abs root admin_root students
+  exam_abs="$(cd -- "$exam" && pwd -P)"
+  root="$(materiale_root_for "$exam_abs")" || die "could not find content/students.json above $exam_abs"
+  admin_root="$root/content/raw/private/admin"
+  students="$root/content/students.json"
+
+  case "$exam_abs" in
+    "$admin_root"/*) ;;
+    *) die "exam directory must be under $admin_root" ;;
+  esac
+
+  local rel class exam_name corrections
+  rel="${exam_abs#"$admin_root"/}"
+  class="$(basename -- "$(dirname -- "$rel")")"
+  exam_name="$(basename -- "$exam_abs")"
+  corrections="$exam_abs/correzioni"
+
+  [ -d "$corrections" ] || die "corrections directory not found: $corrections"
+
+  shopt -s nullglob
+  local files=("$corrections"/*.json)
+  shopt -u nullglob
+
+  local deployed=0
+  local skipped=0
+  local json student key answer_rel answer_abs test_rel test_abs target answers_target
+  local src_file rel_file dst_file typ dst_json test_json_rel schema_rel schema_abs
+
+  for json in "${files[@]}"; do
+    if ! grep -q '"test-json"' "$json" || ! grep -q '"exercises"' "$json"; then
+      printf 'wm: skipping %s (not a correction descriptor)\n' "$json" >&2
+      continue
+    fi
+
+    student="$(basename -- "$json" .json)"
+    key="$class/$student"
+
+    if ! jq -e --arg key "$key" 'has($key)' "$students" >/dev/null; then
+      die "student '$key' not found in $students"
+    fi
+
+    answer_rel="$(jq -r '."answer-folder" // empty' "$json")"
+    [ -n "$answer_rel" ] || die "$json: missing answer-folder"
+
+    test_rel="$(jq -r '."test-json" // empty' "$json")"
+    [ -n "$test_rel" ] || die "$json: missing test-json"
+
+    answer_abs="$(descriptor_path "$corrections" "$answer_rel" "$root")"
+    [ -d "$answer_abs" ] || die "$json: answer folder not found: $answer_abs"
+
+    test_abs="$(descriptor_path "$corrections" "$test_rel" "$root")"
+    [ -f "$test_abs" ] || die "$json: test JSON not found: $test_abs"
+
+    target="$root/content/raw/private/$class/$student/$exam_name"
+    answers_target="$target/le-tue-risposte"
+    mkdir -p -- "$answers_target"
+
+    printf '==> %s -> %s\n' "$key" "$target"
+
+    typ="$target/correzione.typ"
+    if [ -e "$typ" ] && [ "$force" -eq 0 ]; then
+      printf '  skip existing %s\n' "$typ" >&2
+      skipped=$((skipped + 1))
+    else
+      cat >"$typ" <<'EOF'
+#import "/typst-components/src/correction.typ": render-correction
+
+#render-correction(path("correzione.json"))
+EOF
+      printf '  wrote %s\n' "$typ"
+      deployed=$((deployed + 1))
+    fi
+
+    dst_json="$target/correzione.json"
+    if [ -e "$dst_json" ] && [ "$force" -eq 0 ]; then
+      printf '  skip existing %s\n' "$dst_json" >&2
+      skipped=$((skipped + 1))
+    else
+      test_json_rel="$(realpath --relative-to="$target" -- "$test_abs")"
+      schema_rel=""
+      schema_abs="$root/content/raw/private/admin/misc/correction.schema.json"
+      if [ -f "$schema_abs" ]; then
+        schema_rel="$(realpath --relative-to="$target" -- "$schema_abs")"
+      fi
+
+      jq --arg answer_folder "le-tue-risposte" \
+        --arg test_json "$test_json_rel" \
+        --arg schema "$schema_rel" \
+        '."answer-folder" = $answer_folder
+         | ."test-json" = $test_json
+         | if $schema != "" then .["$schema"] = $schema else . end' \
+        "$json" >"$dst_json.tmp"
+      mv -f -- "$dst_json.tmp" "$dst_json"
+
+      printf '  copied %s\n' "$dst_json"
+      deployed=$((deployed + 1))
+    fi
+
+    while IFS= read -r -d '' src_file; do
+      rel_file="${src_file#"$answer_abs"/}"
+      dst_file="$answers_target/$rel_file"
+
+      if [ -e "$dst_file" ] && [ "$force" -eq 0 ]; then
+        printf '  skip existing %s\n' "$dst_file" >&2
+        skipped=$((skipped + 1))
+        continue
+      fi
+
+      mkdir -p -- "$(dirname -- "$dst_file")"
+      cp -f -- "$src_file" "$dst_file"
+      printf '  copied %s\n' "$dst_file"
+      deployed=$((deployed + 1))
+    done < <(find "$answer_abs" -type f -print0 | sort -z)
+  done
+
+  printf 'Deployed %d file(s), skipped %d existing file(s).\n' "$deployed" "$skipped"
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
@@ -367,6 +552,7 @@ main() {
       shift || true
       case "$sub" in
         watch-corrections) cmd_exam_watch_corrections "$@" ;;
+        deploy) cmd_exam_deploy "$@" ;;
         *) usage >&2; exit 1 ;;
       esac
       ;;

@@ -41,6 +41,8 @@ wm deps bump-slidev  # update the in-house slidev theme/addons git deps
 wm deps bump-typst   # update the typst theme/components submodules, commit and push
 wm exam watch-corrections [correzioni-dir] [--out out-dir]
                      # generate and watch JSON correction PDFs
+wm exam deploy <exam-dir> [--force]
+                     # deploy corrections and answers to student private folders
 ```
 
 - `git clone` lists the repositories of the `marini-didattica` organization
@@ -51,6 +53,10 @@ wm exam watch-corrections [correzioni-dir] [--out out-dir]
   `correzioni-dir` (defaults to `./correzioni`, or the current directory if it
   does not exist). It writes generated stubs to `<out>/typ` and watched PDFs to
   `<out>/pdf`; `--out` defaults to `/tmp/marini-didattica/exams`.
+- `exam deploy` copies each correction JSON and its student answers into
+  `content/raw/private/<class>/<student>/<exam>/`, generating
+  `correzione.typ` and `le-tue-risposte/`. Existing files are left untouched
+  unless `--force` is passed.
 
 ## Dependencies
 
@@ -59,4 +65,5 @@ wm exam watch-corrections [correzioni-dir] [--out out-dir]
 | [`gum`](https://github.com/charmbracelet/gum) | interactive `wm` commands | pickers, prompts and highlighting |
 | [`gh`](https://cli.github.com) | `wm git clone` | must be authenticated (`gh auth login`) |
 | [`typst`](https://typst.app) | `wm exam watch-corrections` | compiles and watches the generated stubs |
+| [`jq`](https://jqlang.github.io/jq/) | `wm exam deploy` | reads student keys and answer folders |
 | [`fish`](https://fishshell.com) | `activate.fish` | shell activation |
