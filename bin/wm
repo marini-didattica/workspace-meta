@@ -29,7 +29,7 @@ Usage:
                     Generate correction stubs and watch them with typst
   wm exam deploy <exam-dir> [--force]
                     Deploy corrections and answers to student private folders
-  wm students collect -f <name> --src <dir> --dest <dir> [--move]
+  wm students collect -f <name> --src <dir> [--dest <dir>] [--move]
                     Collect one file/folder from each student
   wm students delete -f <name> --src <dir>
                     Delete one file/folder from each student
@@ -623,7 +623,6 @@ students_parse_src_file() {
 
   [ -n "$STUDENTS_FILE" ] || die "missing -f <file-name>"
   [ -n "$STUDENTS_SRC" ] || die "missing --src <source>"
-  [ "$expect_dest" -eq 0 ] || [ -n "$STUDENTS_DEST" ] || die "missing --dest <destination>"
 
   STUDENTS_FILE="${STUDENTS_FILE%/}"
   case "$STUDENTS_FILE" in
@@ -659,6 +658,8 @@ cmd_students_collect() {
   require gum "install it from https://github.com/charmbracelet/gum"
 
   students_parse_src_file 1 "$@"
+
+  [ -n "$STUDENTS_DEST" ] || STUDENTS_DEST="/tmp/marini-didattica/collected"
 
   local src_abs dest_abs
   src_abs="$(resolve_students_src "$STUDENTS_SRC")" || die "source directory not found: $STUDENTS_SRC"
