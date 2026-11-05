@@ -8,8 +8,9 @@ provides coordination scripts.
 
 - `activate.fish` — activates the workspace in fish: exports `OPENCODE_CONFIG`
   and `OPENCODE_CONFIG_DIR` and prepends `bin/` to `PATH` (`deactivate` undoes it).
-- `opencode.jsonc` — shared OpenCode config: loads `AGENTS.md`, enables LSP and
-  the `code-graph`, `chrome-devtools` and `context7` MCP servers.
+- `opencode.jsonc` — shared OpenCode config: loads `AGENTS.md`, defines the
+  `checker` agent, enables LSP and the `code-graph`, `chrome-devtools` and
+  `context7` MCP servers.
 - `bin/wm` — command to work across the sibling repositories (see below).
 - `bin/run-all` — placeholder.
 - `AGENTS.md` — the workspace map and working rules for agents.
