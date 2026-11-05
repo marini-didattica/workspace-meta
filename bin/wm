@@ -27,6 +27,8 @@ Usage:
   wm deps bump-typst   Update the shared typst submodules, then commit and push
   wm exam watch-corrections [correzioni-dir] [--out out-dir]
                     Generate correction stubs and watch them with typst
+  wm exam generate-solutions [exam-dir] --out <folder>
+                    Generate one solution folder per exam set
   wm exam deploy <exam-dir> [--force]
                     Deploy corrections and answers to student private folders
   wm students collect -f <name> --src <dir> [--dest <dir>] [--move]
@@ -352,6 +354,198 @@ cmd_exam_watch_corrections() {
   trap 'exit 143' TERM
 
   wait || true
+}
+
+# Generate one solution folder per exam set from the exercise-id solution files.
+cmd_exam_generate_solutions() {
+  require jq "install it from https://jqlang.github.io/jq/"
+
+  local out=""
+  local exam=""
+
+  while (($#)); do
+    case "$1" in
+      --out)
+        (($# >= 2)) || die "--out requires a directory"
+        out="$2"
+        shift 2
+        ;;
+      --out=*)
+        out="${1#--out=}"
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      --)
+        shift
+        while (($#)); do
+          [ -z "$exam" ] || die "exam generate-solutions accepts at most one exam directory"
+          exam="$1"
+          shift
+        done
+        ;;
+      -*)
+        die "unknown option '$1' for exam generate-solutions"
+        ;;
+      *)
+        [ -z "$exam" ] || die "exam generate-solutions accepts at most one exam directory"
+        exam="$1"
+        shift
+        ;;
+    esac
+  done
+
+  [ -n "$out" ] || die "usage: wm exam generate-solutions [exam-dir] --out <folder>"
+  [ -n "$exam" ] || exam="."
+
+  local descriptor exam_abs
+  if [ -f "$exam" ]; then
+    descriptor="$(cd -- "$(dirname -- "$exam")" && pwd -P)/$(basename -- "$exam")"
+    exam_abs="$(dirname -- "$descriptor")"
+    if [ "$(basename -- "$exam_abs")" = "testo" ]; then
+      exam_abs="$(dirname -- "$exam_abs")"
+    fi
+  else
+    [ -d "$exam" ] || die "exam directory not found: $exam"
+    exam_abs="$(cd -- "$exam" && pwd -P)"
+
+    shopt -s nullglob
+    local descriptors=("$exam_abs"/testo/*.json)
+    shopt -u nullglob
+
+    if ((${#descriptors[@]} == 0)); then
+      die "no exam descriptor found in $exam_abs/testo"
+    elif ((${#descriptors[@]} == 1)); then
+      descriptor="${descriptors[0]}"
+    else
+      local candidate="$exam_abs/testo/$(basename -- "$exam_abs").json"
+      if [ -f "$candidate" ]; then
+        descriptor="$candidate"
+      else
+        die "multiple exam descriptors found in $exam_abs/testo; pass the descriptor path"
+      fi
+    fi
+  fi
+
+  [ -f "$descriptor" ] || die "exam descriptor not found: $descriptor"
+  jq -e '(.sets | type == "array") and (.categories | type == "array")' \
+    "$descriptor" >/dev/null 2>&1 ||
+    die "$descriptor is not an exam descriptor (missing sets/categories)"
+
+  local solutions="$exam_abs/soluzione"
+  [ -d "$solutions" ] || die "solutions directory not found: $solutions"
+
+  local out_abs
+  out_abs="$(realpath -m -- "$out")"
+  case "$out_abs" in
+    ""|"/")
+      die "invalid output directory: $out"
+      ;;
+  esac
+  [ "$out_abs" != "$(realpath -m -- "$solutions")" ] ||
+    die "output directory must differ from $solutions"
+
+  local -a sets=()
+  mapfile -t sets < <(jq -r '.sets[]' "$descriptor")
+  ((${#sets[@]})) || die "$descriptor: no sets defined"
+
+  local -a job_srcs=()
+  local -a job_dsts=()
+  local -a job_labels=()
+  local -a missing=()
+  local -A destinations=()
+
+  local set id answer answer_base ext src dst key
+  for set in "${sets[@]}"; do
+    while IFS=$'\t' read -r id answer; do
+      [ -n "$id" ] || continue
+
+      answer_base="${answer##*/}"
+      ext="${answer_base##*.}"
+      if [ "$ext" = "$answer_base" ] || [ -z "$ext" ]; then
+        die "$descriptor: exercise $id has an answer file without extension in set '$set': $answer"
+      fi
+
+      src="$solutions/$id.$ext"
+      dst="$out_abs/$set/$answer"
+
+      if [ ! -f "$src" ]; then
+        missing+=("$id.$ext (set '$set')")
+        continue
+      fi
+
+      key="$set:$dst"
+      if [ -n "${destinations[$key]:-}" ]; then
+        die "$descriptor: multiple exercises write $dst in set '$set'"
+      fi
+      destinations["$key"]=1
+
+      job_srcs+=("$src")
+      job_dsts+=("$dst")
+      job_labels+=("$id -> $set/$answer")
+    done < <(jq -r --arg set "$set" '
+      def attr($value):
+        if ($value | type) == "object" then ($value[$set] // "") else $value end;
+      def slug: ascii_downcase | gsub(" "; "");
+      def extension($tag):
+        if $tag == "Esercizio" then ".py" else ".txt" end;
+      def replace($from; $to): split($from) | join($to);
+
+      . as $root
+      | $root.categories[]
+      | . as $category
+      | ($category.id) as $category_id
+      | (attr($category.tag // "")) as $category_tag
+      | [
+          ($category.exercises // [])[]
+          | . as $exercise
+          | (($exercise.sets // $category.sets // $root.sets) // []) as $exercise_sets
+          | select(
+              ($exercise_sets | type) == "array"
+              and ($exercise_sets | index($set)) != null
+            )
+        ] as $exercises
+      | $exercises
+      | to_entries[]
+      | .key as $index
+      | .value as $exercise
+      | (($exercise["answer-file"]) // (
+          ($category_tag | slug)
+          + (($index + 1) | tostring)
+          + extension($category_tag)
+        )) as $pattern
+      | ($pattern
+          | replace("{ordinal}"; (($index + 1) | tostring))
+          | replace("{id}"; $exercise.id)
+          | replace("{category}"; $category_id)
+          | replace("{tag}"; ($category_tag | slug))
+          | replace("{set}"; $set)
+        ) as $answer
+      | "\($exercise.id)\t\($answer)"
+    ' "$descriptor")
+  done
+
+  if ((${#missing[@]})); then
+    printf 'wm: missing solution file(s):\n' >&2
+    printf '  %s\n' "${missing[@]}" >&2
+    die "${#missing[@]} exercise solution(s) missing under $solutions"
+  fi
+
+  for set in "${sets[@]}"; do
+    rm -rf -- "$out_abs/$set"
+    mkdir -p -- "$out_abs/$set"
+  done
+
+  local i
+  for i in "${!job_dsts[@]}"; do
+    mkdir -p -- "$(dirname -- "${job_dsts[$i]}")"
+    cp -f -- "${job_srcs[$i]}" "${job_dsts[$i]}"
+    printf '  %s\n' "${job_labels[$i]}"
+  done
+
+  printf 'Generated %d solution file(s) in %s\n' "${#job_dsts[@]}" "$out_abs"
 }
 
 # Find the materiale repository root (contains content/students.json).
@@ -784,6 +978,7 @@ main() {
       shift || true
       case "$sub" in
         watch-corrections) cmd_exam_watch_corrections "$@" ;;
+        generate-solutions) cmd_exam_generate_solutions "$@" ;;
         deploy) cmd_exam_deploy "$@" ;;
         *) usage >&2; exit 1 ;;
       esac
