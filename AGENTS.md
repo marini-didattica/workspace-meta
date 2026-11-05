@@ -19,6 +19,8 @@ Source `workspace-meta/activate.fish` once per shell: it exports `OPENCODE_CONFI
 # Workflows
 The vast majority of work is slide creation. Prefer changes that target the ecosystem as a whole: a visual change belongs in slidev-theme, a reusable component in slidev-addons.
 
+Exam work uses two workspace agents: `corrector` normalizes answer folders, creates and fills `correzioni/` descriptors, and asks for the scoring grid; `checker` builds `misc/grafo-copie.json` from the completed corrections.
+
 Each deck is served with Slidev from its repo root:
 `cd <repo> && bun run dev src/<deck>/0-main.md -p <port>`
 User ports start at 3130; use a distinct port per deck when running several servers in parallel. A running deck exposes its Slidev MCP on 3030, the Astro dashboard uses 4321.
