@@ -47,8 +47,7 @@ Read all of these:
      - far = everything else.
    - Seating raises the prior probability of copying. It is evidence about opportunity, not proof.
 
-3. Compare answers only within the same set.
-   - Students in different sets answer different exercises, so never compare across sets.
+3. Compare answers.
    - Use the correction descriptor to resolve each student's answer file for each exercise ID.
    - Compare text only after normalizing line endings, trailing whitespace, and leading/trailing blank lines. Do not normalize away meaningful indentation, identifiers, comments, or output text.
    - For Python files, prefer token/AST-level comparison over raw text. Look for:
@@ -70,10 +69,7 @@ Read all of these:
      - `0.60`-`0.85`: substantial distinctive overlap;
      - `0.30`-`0.60`: limited but noteworthy overlap;
      - below `0.30`: omit the edge unless the evidence is unusually specific.
-   - Apply a seating boost only after the answer evidence:
-     - adjacent: add roughly `0.10`-`0.20`;
-     - near: add roughly `0.05`-`0.10`;
-     - far: no boost.
+   - Apply a seating position boost 
    - Cap confidence at `0.99`. Never use seat proximity as the only reason for an edge.
    - Round to at most two decimal places.
 
@@ -120,7 +116,6 @@ Besides pair similarity, record individual anomalies on nodes.
 
 - Add `data.exercise-notes` to a student node when their answer is completely different from the rest of the class or otherwise sketchy. Examples:
   - a Python construct, library, or feature that nobody else used and that was not covered in class;
-  - code that is nonsensical, unexecutable, or logically unrelated to the requested exercise;
   - an answer format or strategy that is inconsistent with the rest of the test;
   - a suspiciously polished or out-of-context solution.
 - The key is the exercise id (`E1`, `S3`, ...); the value is a short note explaining:
