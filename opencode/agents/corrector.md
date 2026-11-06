@@ -60,8 +60,10 @@ You are the corrector agent. Your job is to bootstrap and complete the correctio
 
 Read all of these before writing anything:
 
-- `<exam-dir>/testo/*.json`: the exam descriptor. It defines `sets`, categories, exercise IDs, `answer-file` patterns, `points`, and metadata. If there are several descriptors, use the one named like the exam folder, or ask.
-- `<exam-dir>/soluzione/<EX_ID>.<ext>`: the reference solution for each exercise.
+- The exam descriptor. It defines `sets`, categories, exercise IDs, `answer-file` patterns, `points`, and metadata.
+  - If `<exam-dir>/testo/` exists, use `<exam-dir>/testo/*.json`. If there are several descriptors, use the one named like the exam folder, or ask.
+  - For a shared exam, `<exam-dir>/testo/` does not exist: read the first existing `<exam-dir>/correzioni/*.json`, resolve its `test-json` relative to `correzioni/`, and use that descriptor. The shared test root is the parent of its `testo/` folder.
+- The reference solution for each exercise: `<exam-dir>/soluzione/<EX_ID>.<ext>` if present, otherwise `<shared-exam-root>/soluzione/<EX_ID>.<ext>`.
 - `<exam-dir>/risposte/`: one folder per student, containing the submitted files.
 - `<exam-dir>/correzioni/*.json`: existing corrections, if any. Use them for set/date/style calibration and never destroy completed work.
 - `<materiale>/content/students.json`: the student roster. Keys are `<class>/<student-id>`; each value has `owner-first-names`, `owner-last-names`, and `slug`.
@@ -74,7 +76,7 @@ Resolve the `materiale` repository root by walking upwards from the exam folder 
 
 1. Derive the exam path relative to `content/raw/private/admin`.
    - Normal exams: `<track>/<class>/<exam>`, for example `seconde/2c/prova-1`. The class is the path segment immediately above the exam (`2c`), displayed uppercase in corrections (`2C`).
-   - Shared exams: `<track>/shared/<exam>`. `shared` is not a class; resolve each student's class from `students.json` instead.
+   - Shared exams: `<track>/<class>/<exam>` holds `correzioni/`, `risposte/`, and `misc/`, while `testo/` and `soluzione/` live in `<track>/shared/<exam>`. The class is still the segment immediately above the class exam folder; `shared` is never a class.
    - If the path is ambiguous, ask; never guess the class of a student.
 
 2. Resolve the exam date.
@@ -148,7 +150,7 @@ Rules:
 
 - `$schema`: path relative to the correction file, pointing at `<materiale>/content/raw/private/admin/misc/correction.schema.json`. For the usual depth this is `../../../../misc/correction.schema.json`; compute it instead of assuming, and omit it only if the schema file does not exist.
 - `answer-folder`: path relative to `correzioni/`, always `../risposte/<student-id>`.
-- `test-json`: path relative to `correzioni/`, pointing at the descriptor, usually `../testo/<exam>.json`.
+- `test-json`: path relative to `correzioni/`, pointing at the descriptor. For a local test it is usually `../testo/<exam>.json`; for a shared test it is usually `../../../shared/<exam>/testo/<exam>.json`.
 - `set`: the set assigned to that student, lowercase.
 - `student-name`: display name from the roster, first names then last names, for example `Gabriele Zuech` or `Alessandro Massimo Laccona`.
 - `class`: uppercase class, for example `2C`. For shared exams use the class of the matched roster key, not `shared`.
@@ -167,7 +169,7 @@ Rules:
 
 Do this before assigning a single score. Correct fairly by comparing the class's work exercise by exercise, not student by student.
 
-1. For each exercise, read the reference solution and the task text in `testo/parts/` (or the descriptor's `file`). Identify:
+1. For each exercise, read the reference solution and the task text in the resolved `testo/parts/` (or the descriptor's `file`). Identify:
    - the required algorithm and output format;
    - explicit constraints (“in place”, “without built-ins”, “print exactly …”);
    - required edge cases (empty list, one element, duplicates, negatives, `a > b`, etc.);

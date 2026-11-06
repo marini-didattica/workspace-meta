@@ -45,6 +45,8 @@ wm exam watch-corrections [correzioni-dir] [--out out-dir]
                      # generate and watch JSON correction PDFs
 wm exam generate-solutions [exam-dir] --out <folder>
                      # generate one solution folder per exam set
+wm exam stats <testo-folder> <correzioni-folder> [--students <list>] [--out <file>]
+                     # generate the class statistics PDF
 wm exam deploy <exam-dir> [--force]
                      # deploy corrections and answers to student private folders
 wm students collect -f <name> --src <dir> [--dest <dir>] [--move]
@@ -64,11 +66,18 @@ wm students delete -f <name> --src <dir>
 - `exam generate-solutions` reads the exam descriptor from
   `<exam-dir>/testo/*.json` (defaults to the current directory; a descriptor
   path may be passed instead) and the exercise solutions from
-  `<exam-dir>/soluzione/<EX_ID>.<ext>`. For every set declared by the
-  descriptor it writes `<out>/<set>/` and copies each exercise's solution there,
-  renamed according to the descriptor's `answer-file` pattern (`{ordinal}`,
-  `{id}`, `{category}`, `{tag}` and `{set}` are expanded). It fails without
-  writing anything if a solution file is missing.
+  `<exam-dir>/soluzione/<EX_ID>.<ext>`. If the exam directory has no `testo/`
+  (shared exam), it resolves the descriptor through the first correction's
+  `test-json` and uses the shared exam's `soluzione/` folder. For every set
+  declared by the descriptor it writes `<out>/<set>/` and copies each
+  exercise's solution there, renamed according to the descriptor's
+  `answer-file` pattern (`{ordinal}`, `{id}`, `{category}`, `{tag}` and `{set}`
+  are expanded). It fails without writing anything if a solution file is
+  missing.
+- `exam stats` generates the class statistics PDF from a `testo/` folder and a
+  `correzioni/` folder, which may belong to a shared exam and a class
+  respectively. Without `--students` it uses every correction JSON in the
+  folder; `--out` defaults to the class exam's `misc/stats.pdf`.
 - `exam deploy` copies each correction JSON and its student answers into
   `content/raw/private/<class>/<student>/<exam>/`, generating
   `correzione.typ` and `le-tue-risposte/`. Existing files are left untouched

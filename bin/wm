@@ -29,6 +29,8 @@ Usage:
                     Generate correction stubs and watch them with typst
   wm exam generate-solutions [exam-dir] --out <folder>
                     Generate one solution folder per exam set
+  wm exam stats <testo-folder> <correzioni-folder> [--students <list>] [--out <file>]
+                    Generate the class statistics PDF
   wm exam deploy <exam-dir> [--force]
                     Deploy corrections and answers to student private folders
   wm students collect -f <name> --src <dir> [--dest <dir>] [--move]
@@ -416,7 +418,32 @@ cmd_exam_generate_solutions() {
     shopt -u nullglob
 
     if ((${#descriptors[@]} == 0)); then
-      die "no exam descriptor found in $exam_abs/testo"
+      # Shared exam: the class folder has corrections but no testo/. Resolve
+      # the descriptor through the first correction's test-json.
+      local corrections=("$exam_abs"/correzioni/*.json)
+      if ((${#corrections[@]} == 0)); then
+        die "no exam descriptor found in $exam_abs/testo and no corrections in $exam_abs/correzioni"
+      fi
+
+      local correction="${corrections[0]}"
+      local test_rel test_abs test_dir root
+      test_rel="$(jq -r '."test-json" // empty' "$correction")"
+      [ -n "$test_rel" ] || die "$correction: missing test-json"
+      if [[ "$test_rel" == /* ]]; then
+        root="$(materiale_root_for "$exam_abs")" || die "could not find content/students.json above $exam_abs"
+        test_abs="$(realpath -m -- "$root$test_rel")"
+      else
+        test_abs="$(cd -- "$(dirname -- "$correction")" && realpath -m -- "$test_rel")"
+      fi
+      [ -f "$test_abs" ] || die "shared exam descriptor not found: $test_abs"
+      descriptor="$test_abs"
+      test_dir="$(dirname -- "$test_abs")"
+      if [ "$(basename -- "$test_dir")" = "testo" ]; then
+        exam_abs="$(dirname -- "$test_dir")"
+      else
+        exam_abs="$test_dir"
+      fi
+      printf 'wm: shared exam descriptor: %s\n' "$descriptor" >&2
     elif ((${#descriptors[@]} == 1)); then
       descriptor="${descriptors[0]}"
     else
@@ -546,6 +573,82 @@ cmd_exam_generate_solutions() {
   done
 
   printf 'Generated %d solution file(s) in %s\n' "${#job_dsts[@]}" "$out_abs"
+}
+
+# Generate the class statistics PDF from a shared testo folder and a class
+# correzioni folder.
+cmd_exam_stats() {
+  local out=""
+  local students=""
+  local -a positional=()
+
+  while (($#)); do
+    case "$1" in
+      -o|--out)
+        (($# >= 2)) || die "missing value for $1"
+        out="$2"
+        shift 2
+        ;;
+      -o=*|--out=*)
+        out="${1#*=}"
+        shift
+        ;;
+      --students)
+        (($# >= 2)) || die "missing value for $1"
+        students="$2"
+        shift 2
+        ;;
+      --students=*)
+        students="${1#*=}"
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      --)
+        shift
+        positional+=("$@")
+        break
+        ;;
+      -*)
+        die "unknown option '$1' for exam stats"
+        ;;
+      *)
+        positional+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  ((${#positional[@]} == 2)) || die "usage: wm exam stats <testo-folder> <correzioni-folder> [--students <students>] [--out <file>]"
+
+  local testo correzioni
+  testo="${positional[0]}"
+  correzioni="${positional[1]}"
+  [ -d "$testo" ] || die "testo folder not found: $testo"
+  [ -d "$correzioni" ] || die "correzioni folder not found: $correzioni"
+
+  local testo_abs correzioni_abs root
+  testo_abs="$(cd -- "$testo" && pwd -P)"
+  correzioni_abs="$(cd -- "$correzioni" && pwd -P)"
+  root="$(materiale_root_for "$testo_abs")" || die "could not find content/students.json above $testo_abs"
+
+  local stats_bin="$root/typst-components/bin/typst-stats"
+  [ -x "$stats_bin" ] || die "typst-stats not found: $stats_bin"
+
+  if [ -z "$students" ]; then
+    local -a names=()
+    while IFS= read -r name; do
+      names+=("$name")
+    done < <(find "$correzioni_abs" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sed 's/\.json$//' | sort)
+    ((${#names[@]})) || die "no correction files found in $correzioni_abs"
+    students="$(IFS=,; printf '%s' "${names[*]}")"
+  fi
+
+  local -a args=("$testo_abs" "$correzioni_abs" "$students" --root "$root")
+  [ -z "$out" ] || args+=(--out "$out")
+  "$stats_bin" "${args[@]}"
 }
 
 # Find the materiale repository root (contains content/students.json).
@@ -979,6 +1082,7 @@ main() {
       case "$sub" in
         watch-corrections) cmd_exam_watch_corrections "$@" ;;
         generate-solutions) cmd_exam_generate_solutions "$@" ;;
+        stats) cmd_exam_stats "$@" ;;
         deploy) cmd_exam_deploy "$@" ;;
         *) usage >&2; exit 1 ;;
       esac

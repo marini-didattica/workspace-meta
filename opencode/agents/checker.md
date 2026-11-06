@@ -24,21 +24,23 @@ You are the checker agent. Your job is to detect suspiciously similar answers in
 
 Read all of these:
 
-- `<exam-dir>/testo/*.json`: the exam descriptor. It defines the sets, exercise IDs, answer-file names, and the canonical exercise order.
+- The exam descriptor. It defines the sets, exercise IDs, answer-file names, and the canonical exercise order.
+  - Use `<exam-dir>/testo/*.json` when it exists.
+  - For a shared exam, resolve the first `<exam-dir>/correzioni/*.json` `test-json` relative to `correzioni/` and use that descriptor. The class folder still owns `correzioni/`, `risposte/`, and `misc/`.
 - `<exam-dir>/correzioni/*.json`: one correction per student. Use `student-name`, `set`, `answer-folder`, and `exercises.<ID>.answer-file`.
 - `<exam-dir>/risposte/<student>/`: the student's actual answer files.
-- `<exam-dir>/misc/dislocazione.typ`: the seating plan. Rows are `fila` values; positions inside each row are `banco` values. `none` is an empty seat; names listed in `absent` did not take the test.
+- `<exam-dir>/misc/dislocazione.typ`, if present: the seating plan. Rows are `fila` values; positions inside each row are `banco` values. `none` is an empty seat; names listed in `absent` did not take the test. If it is absent, generate the graph without `data.seat` and report that seating was unavailable.
 - `<exam-dir>/misc/grafo-copie.json`: the existing graph, if present. Preserve its format and use it as a calibration reference, but regenerate its content.
 
 ## Procedure
 
 1. Map names to student IDs.
    - Student ID = correction filename without `.json` (for example `bonetti-alessandra`).
-   - Match display names in `dislocazione.typ` against `student-name` in the correction descriptors. Handle accents, capitalization, and word order.
-   - Exclude students listed in `absent`.
+   - If `dislocazione.typ` exists, match display names against `student-name` in the correction descriptors and exclude students listed in `absent`. Handle accents, capitalization, and word order.
    - Include every student who actually took the test as a node.
 
 2. Build the seat map.
+   - If `dislocazione.typ` is absent, skip this step and omit `data.seat`.
    - Convert each row/column position to `"fila N, banco M"`.
    - Empty seats are not students.
    - Define proximity on the seating grid:
@@ -77,7 +79,7 @@ Read all of these:
    - `data.id`: the student ID.
    - `data.seat`: the seat from `dislocazione.typ`, for example `"fila 1, banco 1"`. Omit it or use an empty string only if the seat is genuinely unknown.
    - `style.label`: `"Cognome\nNome"`, derived from `student-name`.
-   - Order nodes by seat (fila, then banco), then by ID.
+   - Order nodes by seat (fila, then banco), then by ID; when seating is unavailable, order by ID.
 
 6. Write edges.
    - One edge per suspicious pair, aggregating every matching exercise in `data.exercises`.
@@ -100,7 +102,7 @@ Read all of these:
 }
 ```
 
-`test-folder` is `".."` because the graph lives in `misc/` inside the exam folder. Keep it relative to the graph file.
+`test-folder` is `".."` because the graph lives in `misc/` inside the class exam folder. Keep it relative to the graph file. For a shared exam this is still correct: the viewer resolves answers through `<test-folder>/correzioni/`, not through a local `testo/`.
 
 8. Validate before finishing.
    - Run `jq empty <exam-dir>/misc/grafo-copie.json`.
