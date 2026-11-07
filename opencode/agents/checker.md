@@ -24,11 +24,9 @@ You are the checker agent. Your job is to detect suspiciously similar answers in
 
 Read all of these:
 
-- The exam descriptor. It defines the sets, exercise IDs, answer-file names, and the canonical exercise order.
-  - Use `<exam-dir>/testo/*.json` when it exists.
-  - For a shared exam, resolve the first `<exam-dir>/correzioni/*.json` `test-json` relative to `correzioni/` and use that descriptor. The class folder still owns `correzioni/`, `risposte/`, and `misc/`.
-- `<exam-dir>/correzioni/*.json`: one correction per student. Use `student-name`, `set`, `answer-folder`, and `exercises.<ID>.answer-file`.
-- `<exam-dir>/risposte/<student>/`: the student's actual answer files.
+- `<exam-dir>/manifest.json` and the exam descriptor it points to through `test-json`. The descriptor defines the sets, exercise IDs, answer-file names, and the canonical exercise order. The manifest also defines the class answer folder.
+- `<exam-dir>/correzioni/*.json`: one correction per class student. Use `set` and `exercises.<ID>.answer-file`. A file containing only `{"absent": true}` means the student is absent and must not become a node. Display names come from `content/students.json`.
+- `<exam-dir>/risposte/<student>/`: the student's actual answer files, or the manifest `answer-folder` joined with the student slug.
 - `<exam-dir>/misc/dislocazione.typ`, if present: the seating plan. Rows are `fila` values; positions inside each row are `banco` values. `none` is an empty seat; names listed in `absent` did not take the test. If it is absent, generate the graph without `data.seat` and report that seating was unavailable.
 - `<exam-dir>/misc/grafo-copie.json`: the existing graph, if present. Preserve its format and use it as a calibration reference, but regenerate its content.
 
@@ -36,7 +34,8 @@ Read all of these:
 
 1. Map names to student IDs.
    - Student ID = correction filename without `.json` (for example `bonetti-alessandra`).
-   - If `dislocazione.typ` exists, match display names against `student-name` in the correction descriptors and exclude students listed in `absent`. Handle accents, capitalization, and word order.
+   - Skip every correction whose descriptor has `"absent": true`.
+   - If `dislocazione.typ` exists, match display names against the roster entry for the class (`content/students.json`) and exclude students listed in `absent`. Handle accents, capitalization, and word order.
    - Include every student who actually took the test as a node.
 
 2. Build the seat map.
@@ -78,7 +77,7 @@ Read all of these:
 5. Write nodes.
    - `data.id`: the student ID.
    - `data.seat`: the seat from `dislocazione.typ`, for example `"fila 1, banco 1"`. Omit it or use an empty string only if the seat is genuinely unknown.
-   - `style.label`: `"Cognome\nNome"`, derived from `student-name`.
+   - `style.label`: `"Cognome\nNome"`, derived from the roster display name.
    - Order nodes by seat (fila, then banco), then by ID; when seating is unavailable, order by ID.
 
 6. Write edges.

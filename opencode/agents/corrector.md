@@ -60,10 +60,9 @@ You are the corrector agent. Your job is to bootstrap and complete the correctio
 
 Read all of these before writing anything:
 
-- The exam descriptor. It defines `sets`, categories, exercise IDs, `answer-file` patterns, `points`, and metadata.
-  - If `<exam-dir>/testo/` exists, use `<exam-dir>/testo/*.json`. If there are several descriptors, use the one named like the exam folder, or ask.
-  - For a shared exam, `<exam-dir>/testo/` does not exist: read the first existing `<exam-dir>/correzioni/*.json`, resolve its `test-json` relative to `correzioni/`, and use that descriptor. The shared test root is the parent of its `testo/` folder.
-- The reference solution for each exercise: `<exam-dir>/soluzione/<EX_ID>.<ext>` if present, otherwise `<shared-exam-root>/soluzione/<EX_ID>.<ext>`.
+- `<exam-dir>/manifest.json`: the exam manifest. It provides `test-json`, `answer-folder`, the default `date`, and optional `title`, `subtitle` and `import-answers`.
+- The exam descriptor pointed to by `manifest.json` (`test-json` is relative to the manifest). It defines `sets`, categories, exercise IDs, `answer-file` patterns, `points`, and metadata.
+- The reference solution for each exercise: `<exam-dir>/soluzione/<EX_ID>.<ext>` if present, otherwise `soluzione/` next to the descriptor (for shared exams).
 - `<exam-dir>/risposte/`: one folder per student, containing the submitted files.
 - `<exam-dir>/correzioni/*.json`: existing corrections, if any. Use them for set/date/style calibration and never destroy completed work.
 - `<materiale>/content/students.json`: the student roster. Keys are `<class>/<student-id>`; each value has `owner-first-names`, `owner-last-names`, and `slug`.
@@ -80,14 +79,14 @@ Resolve the `materiale` repository root by walking upwards from the exam folder 
    - If the path is ambiguous, ask; never guess the class of a student.
 
 2. Resolve the exam date.
-   - If existing corrections all carry the same `date`, reuse it.
-   - Otherwise ask once, together with the set question. Store it as an Italian long date, for example `29 ottobre 2026`.
+   - Use the manifest `date` unless existing corrections consistently override it.
+   - If the manifest has no usable date, ask once together with the set question.
 
 3. Resolve sets.
    - Read `sets` and each exercise's effective set list: exercise `sets`, else category `sets`, else exam `sets`.
    - Existing corrections may already declare the set for some students. Use those declarations, but still ask one confirmation question.
    - **Always ask exactly one set question before creating correction files.** Never ask per student. Phrase it like: “Quale set hanno svolto gli studenti? Default: tutti `<set>`; indica le eccezioni (es. `tutti a tranne Rossi = b`).” Include the date question in the same turn if it is unknown.
-   - Students with no answer folder are absent and get no correction file; do not ask about them one by one.
+   - Students with no answer folder are absent and get a correction file containing only `{"absent": true}`; do not ask about them one by one.
    - If the user says “tutti a tranne …”, apply the default to everyone else.
 
 ## Phase 1 — Normalize answer folder names
@@ -128,14 +127,7 @@ Use the descriptor and roster to fill:
 
 ```json
 {
-  "$schema": "../../../../misc/correction.schema.json",
-  "answer-folder": "../risposte/zuech-gabriele",
-  "test-json": "../testo/prova-1.json",
   "set": "a",
-  "student-name": "Gabriele Zuech",
-  "class": "2C",
-  "date": "29 ottobre 2026",
-  "import-answers": true,
   "exercises": {
     "E1": {
       "answer-file": "esercizio1.py",
@@ -146,16 +138,17 @@ Use the descriptor and roster to fill:
 }
 ```
 
+An absent student gets only:
+
+```json
+{ "absent": true }
+```
+
 Rules:
 
-- `$schema`: path relative to the correction file, pointing at `<materiale>/content/raw/private/admin/misc/correction.schema.json`. For the usual depth this is `../../../../misc/correction.schema.json`; compute it instead of assuming, and omit it only if the schema file does not exist.
-- `answer-folder`: path relative to `correzioni/`, always `../risposte/<student-id>`.
-- `test-json`: path relative to `correzioni/`, pointing at the descriptor. For a local test it is usually `../testo/<exam>.json`; for a shared test it is usually `../../../shared/<exam>/testo/<exam>.json`.
+- Do not add `$schema`, `answer-folder`, `test-json`, `student-name` or `class`: they are derived by the renderer from the manifest, the file name, the folder path and `students.json`.
 - `set`: the set assigned to that student, lowercase.
-- `student-name`: display name from the roster, first names then last names, for example `Gabriele Zuech` or `Alessandro Massimo Laccona`.
-- `class`: uppercase class, for example `2C`. For shared exams use the class of the matched roster key, not `shared`.
-- `date`: Italian long date.
-- `import-answers`: `true`.
+- `date`, `title`, `subtitle`, `import-answers`: optional overrides; omit them when the manifest defaults are correct.
 - `exercises`: exactly the exercises **active in that student's set**, in descriptor order (categories, then exercises). Do not include exercises that do not exist in the set.
   - Expand `answer-file` with the descriptor's placeholders: `{ordinal}` (position within the category for that set), `{id}`, `{category}`, `{tag}` (lowercase category tag), and `{set}`.
   - `answer-file` is the actual file name in the student's folder. If the expected name is absent but a unique reasonable match exists (same ordinal or exercise ID), use the actual file and report it. Never invent a file.
@@ -243,9 +236,10 @@ Before finishing, do a consistency pass:
 Run these checks before reporting success:
 
 - `jq empty <exam-dir>/correzioni/*.json` for every file.
-- Every file has the required keys: `answer-folder`, `test-json`, `set`, `exercises`.
-- `answer-folder` exists; `test-json` exists; `$schema` exists if present.
-- Every `answer-file` for a non-null exercise exists inside `answer-folder`.
+- A present student has `set` and `exercises`; an absent student has only `"absent": true`.
+- `manifest.json` exists; its `test-json` and `answer-folder` resolve.
+- Every class student has a correction file, including absent students.
+- Every `answer-file` for a non-null exercise exists inside the manifest answer folder for that student.
 - Every exercise active in the student's set has an entry; no exercise outside the set is present.
 - Every `score` is within `[0, points-for-that-set]` and is an integer when possible.
 - Every non-null entry has a non-empty comment.
@@ -259,7 +253,7 @@ Finish with a concise report:
 
 - the exam folder, class resolution, date, and set assignment (including exceptions);
 - the folder renames performed (`old → new`), or “none”;
-- correction files created or updated, and students skipped because they had no answers;
+- correction files created or updated, and students marked absent;
 - the score matrix by exercise, plus totals;
 - calibration decisions the user made;
 - any missing/blank/ambiguous answer, unexpected file, or student not found in the roster;
