@@ -29,7 +29,7 @@ Usage:
                     Generate correction stubs and watch them with typst
   wm exam generate-solutions [exam-dir] --out <folder>
                     Generate one solution folder per exam set
-  wm exam stats <testo-folder> <correzioni-folder> [--students <list>] [--out <file>]
+  wm exam stats <correzioni-folder> [--out <file>]
                     Generate the class statistics PDF
   wm exam deploy <exam-dir> [--force]
                     Deploy corrections and answers to student private folders
@@ -310,12 +310,13 @@ cmd_exam_watch_corrections() {
 
   local -a stubs=()
   local -a pdfs=()
-  local json name stub pdf template
+  local json name stub pdf template students_json
   template="$(typst_escape "$package")"
+  students_json="$(typst_escape "$root/content/students.json")"
 
   for json in "${files[@]}"; do
-    if ! grep -q '"test-json"' "$json" || ! grep -q '"exercises"' "$json"; then
-      printf 'wm: skipping %s (not a correction descriptor)\n' "$json" >&2
+    if ! grep -q '"exercises"' "$json"; then
+      printf 'wm: skipping %s (not a present-student correction descriptor)\n' "$json" >&2
       continue
     fi
 
@@ -325,7 +326,8 @@ cmd_exam_watch_corrections() {
 
     {
       printf '#import "%s": render-correction\n\n' "$template"
-      printf '#render-correction(path("%s"))\n' "$(typst_escape "$json")"
+      printf '#render-correction(path("%s"), students-json: "%s")\n' \
+        "$(typst_escape "$json")" "$students_json"
     } >"$stub"
 
     stubs+=("$stub")
@@ -413,29 +415,18 @@ cmd_exam_generate_solutions() {
     [ -d "$exam" ] || die "exam directory not found: $exam"
     exam_abs="$(cd -- "$exam" && pwd -P)"
 
-    shopt -s nullglob
-    local descriptors=("$exam_abs"/testo/*.json)
-    shopt -u nullglob
-
-    if ((${#descriptors[@]} == 0)); then
-      # Shared exam: the class folder has corrections but no testo/. Resolve
-      # the descriptor through the first correction's test-json.
-      local corrections=("$exam_abs"/correzioni/*.json)
-      if ((${#corrections[@]} == 0)); then
-        die "no exam descriptor found in $exam_abs/testo and no corrections in $exam_abs/correzioni"
-      fi
-
-      local correction="${corrections[0]}"
+    local manifest="$exam_abs/manifest.json"
+    if [ -f "$manifest" ]; then
       local test_rel test_abs test_dir root
-      test_rel="$(jq -r '."test-json" // empty' "$correction")"
-      [ -n "$test_rel" ] || die "$correction: missing test-json"
+      test_rel="$(jq -r '."test-json" // empty' "$manifest")"
+      [ -n "$test_rel" ] || die "$manifest: missing test-json"
       if [[ "$test_rel" == /* ]]; then
         root="$(materiale_root_for "$exam_abs")" || die "could not find content/students.json above $exam_abs"
         test_abs="$(realpath -m -- "$root$test_rel")"
       else
-        test_abs="$(cd -- "$(dirname -- "$correction")" && realpath -m -- "$test_rel")"
+        test_abs="$(cd -- "$exam_abs" && realpath -m -- "$test_rel")"
       fi
-      [ -f "$test_abs" ] || die "shared exam descriptor not found: $test_abs"
+      [ -f "$test_abs" ] || die "$manifest: test JSON not found: $test_abs"
       descriptor="$test_abs"
       test_dir="$(dirname -- "$test_abs")"
       if [ "$(basename -- "$test_dir")" = "testo" ]; then
@@ -443,15 +434,23 @@ cmd_exam_generate_solutions() {
       else
         exam_abs="$test_dir"
       fi
-      printf 'wm: shared exam descriptor: %s\n' "$descriptor" >&2
-    elif ((${#descriptors[@]} == 1)); then
-      descriptor="${descriptors[0]}"
+      printf 'wm: exam descriptor from manifest: %s\n' "$descriptor" >&2
     else
-      local candidate="$exam_abs/testo/$(basename -- "$exam_abs").json"
-      if [ -f "$candidate" ]; then
-        descriptor="$candidate"
+      shopt -s nullglob
+      local descriptors=("$exam_abs"/testo/*.json)
+      shopt -u nullglob
+
+      if ((${#descriptors[@]} == 0)); then
+        die "no manifest.json and no exam descriptor found in $exam_abs/testo"
+      elif ((${#descriptors[@]} == 1)); then
+        descriptor="${descriptors[0]}"
       else
-        die "multiple exam descriptors found in $exam_abs/testo; pass the descriptor path"
+        local candidate="$exam_abs/testo/$(basename -- "$exam_abs").json"
+        if [ -f "$candidate" ]; then
+          descriptor="$candidate"
+        else
+          die "multiple exam descriptors found in $exam_abs/testo; pass the descriptor path"
+        fi
       fi
     fi
   fi
@@ -575,12 +574,10 @@ cmd_exam_generate_solutions() {
   printf 'Generated %d solution file(s) in %s\n' "${#job_dsts[@]}" "$out_abs"
 }
 
-# Generate the class statistics PDF from a shared testo folder and a class
-# correzioni folder.
+# Generate the class statistics PDF from its correzioni folder.
 cmd_exam_stats() {
   local out=""
-  local students=""
-  local -a positional=()
+  local correzioni=""
 
   while (($#)); do
     case "$1" in
@@ -593,60 +590,40 @@ cmd_exam_stats() {
         out="${1#*=}"
         shift
         ;;
-      --students)
-        (($# >= 2)) || die "missing value for $1"
-        students="$2"
-        shift 2
-        ;;
-      --students=*)
-        students="${1#*=}"
-        shift
-        ;;
       -h|--help)
         usage
         return 0
         ;;
       --)
         shift
-        positional+=("$@")
-        break
+        while (($#)); do
+          [ -z "$correzioni" ] || die "exam stats accepts exactly one correzioni folder"
+          correzioni="$1"
+          shift
+        done
         ;;
       -*)
         die "unknown option '$1' for exam stats"
         ;;
       *)
-        positional+=("$1")
+        [ -z "$correzioni" ] || die "exam stats accepts exactly one correzioni folder"
+        correzioni="$1"
         shift
         ;;
     esac
   done
 
-  ((${#positional[@]} == 2)) || die "usage: wm exam stats <testo-folder> <correzioni-folder> [--students <students>] [--out <file>]"
-
-  local testo correzioni
-  testo="${positional[0]}"
-  correzioni="${positional[1]}"
-  [ -d "$testo" ] || die "testo folder not found: $testo"
+  [ -n "$correzioni" ] || die "usage: wm exam stats <correzioni-folder> [--out <file>]"
   [ -d "$correzioni" ] || die "correzioni folder not found: $correzioni"
 
-  local testo_abs correzioni_abs root
-  testo_abs="$(cd -- "$testo" && pwd -P)"
+  local correzioni_abs root
   correzioni_abs="$(cd -- "$correzioni" && pwd -P)"
-  root="$(materiale_root_for "$testo_abs")" || die "could not find content/students.json above $testo_abs"
+  root="$(materiale_root_for "$correzioni_abs")" || die "could not find content/students.json above $correzioni_abs"
 
   local stats_bin="$root/typst-components/bin/typst-stats"
   [ -x "$stats_bin" ] || die "typst-stats not found: $stats_bin"
 
-  if [ -z "$students" ]; then
-    local -a names=()
-    while IFS= read -r name; do
-      names+=("$name")
-    done < <(find "$correzioni_abs" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sed 's/\.json$//' | sort)
-    ((${#names[@]})) || die "no correction files found in $correzioni_abs"
-    students="$(IFS=,; printf '%s' "${names[*]}")"
-  fi
-
-  local -a args=("$testo_abs" "$correzioni_abs" "$students" --root "$root")
+  local -a args=("$correzioni_abs" --root "$root")
   [ -z "$out" ] || args+=(--out "$out")
   "$stats_bin" "${args[@]}"
 }
@@ -727,13 +704,26 @@ cmd_exam_deploy() {
     *) die "exam directory must be under $admin_root" ;;
   esac
 
-  local rel class exam_name corrections
+  local rel class exam_name corrections manifest
   rel="${exam_abs#"$admin_root"/}"
   class="$(basename -- "$(dirname -- "$rel")")"
   exam_name="$(basename -- "$exam_abs")"
   corrections="$exam_abs/correzioni"
+  manifest="$exam_abs/manifest.json"
 
   [ -d "$corrections" ] || die "corrections directory not found: $corrections"
+  [ -f "$manifest" ] || die "manifest not found: $manifest"
+  jq -e '(.version == 1) and ((."test-json" | type) == "string") and ((.date | type) == "string")' \
+    "$manifest" >/dev/null || die "$manifest: invalid manifest"
+
+  local manifest_answer_rel manifest_test_rel answer_base test_abs
+  manifest_answer_rel="$(jq -r '."answer-folder" // "risposte"' "$manifest")"
+  manifest_test_rel="$(jq -r '."test-json" // empty' "$manifest")"
+  [ -n "$manifest_test_rel" ] || die "$manifest: missing test-json"
+
+  answer_base="$(descriptor_path "$exam_abs" "$manifest_answer_rel" "$root")"
+  test_abs="$(descriptor_path "$exam_abs" "$manifest_test_rel" "$root")"
+  [ -f "$test_abs" ] || die "$manifest: test JSON not found: $test_abs"
 
   shopt -s nullglob
   local files=("$corrections"/*.json)
@@ -741,12 +731,13 @@ cmd_exam_deploy() {
 
   local deployed=0
   local skipped=0
-  local json student key answer_rel answer_abs test_rel test_abs target answers_target
-  local src_file rel_file dst_file typ dst_json test_json_rel schema_rel schema_abs
+  local absent=0
+  local json student key answer_abs target answers_target
+  local src_file rel_file dst_file typ dst_json correction_rel correction_arg
 
   for json in "${files[@]}"; do
-    if ! grep -q '"test-json"' "$json" || ! grep -q '"exercises"' "$json"; then
-      printf 'wm: skipping %s (not a correction descriptor)\n' "$json" >&2
+    if ! jq -e 'type == "object"' "$json" >/dev/null 2>&1; then
+      printf 'wm: skipping %s (not a JSON object)\n' "$json" >&2
       continue
     fi
 
@@ -757,17 +748,14 @@ cmd_exam_deploy() {
       die "student '$key' not found in $students"
     fi
 
-    answer_rel="$(jq -r '."answer-folder" // empty' "$json")"
-    [ -n "$answer_rel" ] || die "$json: missing answer-folder"
+    if jq -e '.absent == true' "$json" >/dev/null 2>&1; then
+      printf '  skip absent %s\n' "$key" >&2
+      absent=$((absent + 1))
+      continue
+    fi
 
-    test_rel="$(jq -r '."test-json" // empty' "$json")"
-    [ -n "$test_rel" ] || die "$json: missing test-json"
-
-    answer_abs="$(descriptor_path "$corrections" "$answer_rel" "$root")"
+    answer_abs="$answer_base/$student"
     [ -d "$answer_abs" ] || die "$json: answer folder not found: $answer_abs"
-
-    test_abs="$(descriptor_path "$corrections" "$test_rel" "$root")"
-    [ -f "$test_abs" ] || die "$json: test JSON not found: $test_abs"
 
     target="$root/content/raw/private/$class/$student/$exam_name"
     answers_target="$target/le-tue-risposte"
@@ -775,43 +763,20 @@ cmd_exam_deploy() {
 
     printf '==> %s -> %s\n' "$key" "$target"
 
+    correction_rel="${json#"$root"/}"
+    correction_arg="/$correction_rel"
     typ="$target/correzione.typ"
-    if [ -e "$typ" ] && [ "$force" -eq 0 ]; then
-      printf '  skip existing %s\n' "$typ" >&2
-      skipped=$((skipped + 1))
-    else
-      cat >"$typ" <<'EOF'
-#import "/typst-components/src/correction.typ": render-correction
-
-#render-correction(path("correzione.json"))
-EOF
-      printf '  wrote %s\n' "$typ"
-      deployed=$((deployed + 1))
-    fi
+    {
+      printf '#import "/typst-components/src/correction.typ": render-correction\n\n'
+      printf '#render-correction("%s")\n' "$correction_arg"
+    } >"$typ"
+    printf '  wrote %s\n' "$typ"
+    deployed=$((deployed + 1))
 
     dst_json="$target/correzione.json"
-    if [ -e "$dst_json" ] && [ "$force" -eq 0 ]; then
-      printf '  skip existing %s\n' "$dst_json" >&2
-      skipped=$((skipped + 1))
-    else
-      test_json_rel="$(realpath --relative-to="$target" -- "$test_abs")"
-      schema_rel=""
-      schema_abs="$root/content/raw/private/admin/misc/correction.schema.json"
-      if [ -f "$schema_abs" ]; then
-        schema_rel="$(realpath --relative-to="$target" -- "$schema_abs")"
-      fi
-
-      jq --arg answer_folder "le-tue-risposte" \
-        --arg test_json "$test_json_rel" \
-        --arg schema "$schema_rel" \
-        '."answer-folder" = $answer_folder
-         | ."test-json" = $test_json
-         | if $schema != "" then .["$schema"] = $schema else . end' \
-        "$json" >"$dst_json.tmp"
-      mv -f -- "$dst_json.tmp" "$dst_json"
-
-      printf '  copied %s\n' "$dst_json"
-      deployed=$((deployed + 1))
+    if [ -e "$dst_json" ]; then
+      rm -f -- "$dst_json"
+      printf '  removed %s\n' "$dst_json"
     fi
 
     while IFS= read -r -d '' src_file; do
@@ -831,7 +796,8 @@ EOF
     done < <(find "$answer_abs" -type f -print0 | sort -z)
   done
 
-  printf 'Deployed %d file(s), skipped %d existing file(s).\n' "$deployed" "$skipped"
+  printf 'Deployed %d file(s), skipped %d existing file(s), ignored %d absent student(s).\n' \
+    "$deployed" "$skipped" "$absent"
 }
 
 # Resolve a students source directory. Relative paths first resolve from the
