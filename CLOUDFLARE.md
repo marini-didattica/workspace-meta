@@ -1,12 +1,11 @@
 # Migrazione a Cloudflare Pages
 
 > [!WARNING]
-> **Il progetto `marini-didattica-admin` è pubblico finché non configuri
-> Cloudflare Access.** Il pulsante "Enable access policy" di Pages protegge solo
-> i preview: per proteggere l'hostname di produzione `pages.dev` e il custom
-> domain `admin.didattica.mattia-marini.com` servono i passaggi della sezione 6.
-> Verifica con `curl -I`: entrambi gli URL devono rispondere `302` verso
-> `*.cloudflareaccess.com`, non `200`.
+> **Il progetto `marini-didattica-admin` è protetto da HTTP Basic Auth, non da
+> Cloudflare Access.** Se `ADMIN_USER` e `ADMIN_PASS` non sono configurati, il
+> worker risponde `503` (fail closed) e non serve alcun contenuto. La password
+> non va mai nel repository: il repository `materiale` è pubblico. Vedi la
+> sezione 6.
 
 Tutti i siti deployabili sono stati spostati da GitHub Pages a **Cloudflare
 Pages**. Ogni sito è un progetto separato e viene pubblicato sul proprio
@@ -105,68 +104,62 @@ I file sono già nella storia Git. Dopo aver fatto un backup, valuta la pulizia
 della storia con `git filter-repo` e considera compromessi i codici già
 pubblicati. Le altre repository possono restare pubbliche.
 
-### 6. Attiva Access sul progetto admin
+### 6. Configura la password del progetto admin
 
-Il progetto admin contiene solo materiale del docente, quindi va protetto **per
-intero**, non per path. Cloudflare Pages ha un pulsante che protegge i preview;
-per proteggere anche l'hostname di produzione `*.pages.dev` servono due passaggi
-in più (sono le istruzioni ufficiali di Cloudflare per i "Known issues" di
-Pages).
+Il progetto admin è protetto **per intero** da HTTP Basic Auth. Il worker
+`deploy/admin/_worker.js` viene copiato in `dist-admin/_worker.js` e controlla
+ogni richiesta, inclusi i PDF e i file sotto `/raw/private/`.
 
-1. **Workers & Pages → marini-didattica-admin → Settings → Enable access
-   policy**. Questo crea l'applicazione Access e protegge i preview.
-2. **Manage** sull'applicazione appena creata → **Access → Applications** →
-   seleziona il progetto → **Configure**.
-3. In **Public hostname → Subdomain** cancella il wildcard `*`, lascia
-   `marini-didattica-admin.pages.dev` e salva. Ora è protetto l'hostname di
-   produzione.
-4. Torna su **Settings → General → Enable access policy** e riattivalo, così
-   vengono protetti anche i preview.
-5. Verifica che esistano due applicazioni: una per
-   `marini-didattica-admin.pages.dev` e una per
-   `*.<project>.pages.dev`.
-6. Crea una **seconda** Access application self-hosted per il custom domain
-   `admin.didattica.mattia-marini.com`, con la stessa policy.
+Le credenziali sono variabili del progetto Pages, mai nel repository:
 
-Policy (uguale per entrambe):
+1. **Workers & Pages → marini-didattica-admin → Settings → Variables and
+   Secrets**.
+2. Nel ambiente **Production** (e **Preview** se usi i preview) aggiungi:
+   - `ADMIN_USER` — testo, ad esempio `admin`
+   - `ADMIN_PASS` — **secret**, una password lunga e casuale
+     (`openssl rand -base64 24`)
+3. Salva. Se il dashboard lo richiede, rilancia il deployment.
+4. Verifica:
 
-- **Allow** → **Emails** → la tua email
-- Login: **One-time PIN** via email (non serve Google/GitHub)
+   ```sh
+   curl -I https://marini-didattica-admin.pages.dev/admin/
+   # 401 con WWW-Authenticate: Basic
 
-Se il progetto non ha preview abilitati, il passaggio 4 non serve.
+   curl -u admin:LA_TUA_PASSWORD -I https://marini-didattica-admin.pages.dev/admin/
+   # 200
 
-Verifica:
+   curl -I https://admin.didattica.mattia-marini.com/admin/
+   # 401
+
+   curl -I https://marini-didattica-admin.pages.dev/raw/private/MRNMTT03/...
+   # 401
+   ```
+
+   `503` significa che `ADMIN_USER`/`ADMIN_PASS` non sono configurati.
+   `200` senza credenziali significa che il worker non è nel deployment.
+
+In alternativa da terminale:
 
 ```sh
-curl -I https://marini-didattica-admin.pages.dev/admin/
-curl -I https://admin.didattica.mattia-marini.com/admin/
+npx wrangler pages secret put ADMIN_USER --project-name=marini-didattica-admin
+npx wrangler pages secret put ADMIN_PASS --project-name=marini-didattica-admin
 ```
 
-Entrambi devono rispondere `302` verso `*.cloudflareaccess.com`. Se rispondono
-`200`, il materiale del docente è pubblico.
+Note:
 
-**Fallo prima del primo deploy del progetto admin.** Per evitare esposizioni
-accidentali, il job "Deploy admin site" è disattivato finché non imposti la
-variabile di repository `DEPLOY_ADMIN=true`.
+- Basic Auth non ha logout: il browser ricorda le credenziali per la sessione.
+  Per uscire, chiudi tutte le schede o usa una finestra privata.
+- Usa una password lunga e casuale: non c'è blocco dopo tentativi falliti.
+  Se vuoi, aggiungi una regola di rate limiting/WAF Cloudflare su
+  `admin.didattica.mattia-marini.com`.
+- Se avevi creato applicazioni Cloudflare Access per gli stessi hostname,
+  rimuovile: altrimenti il browser chiederà due autenticazioni.
+- Il worker vale per `pages.dev`, per il custom domain e per ogni deployment
+  del progetto, compresi i preview.
 
-Ordine corretto:
-
-1. crea il progetto `marini-didattica-admin` (vuoto, come da passo 2);
-2. configura Access sul progetto (passi sopra);
-3. imposta **Settings → Secrets and variables → Actions → Variables → New
-   repository variable** → `DEPLOY_ADMIN` = `true`;
-4. fai partire il workflow: il primo deploy admin nasce già protetto.
-
-Se il dashboard non permette di configurare Access su un progetto senza
-deployment, pubblica prima una pagina placeholder innocua con
-`npx wrangler pages deploy <cartella-con-index.html> --project-name=marini-didattica-admin`,
-configura Access, verifica il login e solo allora imposta `DEPLOY_ADMIN=true`.
-Non pubblicare mai `dist-admin` prima che Access sia attivo.
-
-Il custom domain `admin.didattica.mattia-marini.com` esiste già: va protetto con
-la sua Access application. Se in futuro aggiungi altri domini, aggiungili
-**prima** di creare l'Access application: Cloudflare non permette di aggiungere
-un custom domain a un hostname che ha già una policy Access attiva.
+Il job "Deploy admin site" è disattivato finché non imposti la variabile di
+repository `DEPLOY_ADMIN=true`. Puoi impostarla anche subito: se le credenziali
+non sono ancora configurate, il sito risponde `503` e non espone nulla.
 
 ### 7. Verifica
 
@@ -174,10 +167,13 @@ Dopo il primo push su `main` di ogni repository:
 
 | Controllo | Atteso |
 |---|---|
-| `https://marini-didattica-admin.pages.dev/` | login Access, poi redirect a `/admin/` |
-| `https://marini-didattica-admin.pages.dev/admin/` | login Access |
-| `https://marini-didattica-materiale.pages.dev/admin/` | 404 |
-| `https://marini-didattica-materiale.pages.dev/raw/private/MRNMTT03/...` | 404 |
+| `https://marini-didattica-admin.pages.dev/admin/` senza credenziali | `401` con `WWW-Authenticate: Basic` |
+| `https://marini-didattica-admin.pages.dev/admin/` con credenziali | `200` |
+| `https://admin.didattica.mattia-marini.com/admin/` senza credenziali | `401` |
+| `https://marini-didattica-admin.pages.dev/raw/private/MRNMTT03/...` | `401` |
+| `https://marini-didattica-admin.pages.dev/admin/` | `503` se `ADMIN_USER`/`ADMIN_PASS` mancano |
+| `https://marini-didattica-materiale.pages.dev/admin/` | `404` |
+| `https://marini-didattica-materiale.pages.dev/raw/private/MRNMTT03/...` | `404` |
 | `https://marini-didattica-materiale.pages.dev/private/<codice>/` | accesso diretto, senza login |
 | `https://marini-didattica-materiale.pages.dev/raw/private/<codice>/...` | accesso diretto |
 | `https://marini-didattica-site.pages.dev/` | sito principale |
@@ -203,17 +199,20 @@ deploy resta online finché non lo rimuovi.
    `marini-didattica.com`, `materiale.marini-didattica.com`,
    `admin.marini-didattica.com`, `slides.marini-didattica.com`.
 4. Aggiorna gli stessi file elencati sopra con i nuovi URL.
-5. Aggiungi una Access application per `admin.marini-didattica.com` e mantieni
-   protetto anche `marini-didattica-admin.pages.dev` (o rimuovilo).
+5. Non serve una Access application: Basic Auth protegge automaticamente ogni
+   hostname del progetto admin, custom domain compreso. Se aggiungi un dominio
+   personalizzato, verifica che `curl -I https://admin.<dominio>/admin/`
+   risponda `401`.
 
 ## Struttura del deploy `materiale`
 
 `bun run build:deploy` produce due cartelle:
 
-- `dist-public/`: sito pubblico e studenti. **Non contiene** `/admin` né i file
-  della cartella staff.
-- `dist-admin/`: copia completa con `/admin` e i file staff. Viene pubblicata
-  solo sul progetto protetto da Access.
+- `dist-public/`: sito pubblico e studenti. **Non contiene** `/admin`, i file
+  della cartella staff, né `_worker.js`.
+- `dist-admin/`: copia completa con `/admin`, i file staff e `_worker.js`.
+  Viene pubblicata solo sul progetto `marini-didattica-admin`; il worker
+  applica Basic Auth a ogni richiesta.
 
 La cartella staff è quella con `"staff": true` in `content/students.json`
 (attualmente `admin`, codice `MRNMTT03`). Le pagine pubbliche `/private/<codice>`
@@ -237,5 +236,6 @@ il submodule o correggi la chiamata `cover(top: top, ...)` in
 
 - Cloudflare Pages: piano Free, 500 build/mese, 20.000 file per deploy,
   25 MiB per file, richieste statiche illimitate.
-- Cloudflare Access: Free fino a 50 utenti.
+- Basic Auth con Pages Functions/Worker: incluso nel piano Free.
+- Cloudflare Access (alternativa SSO, non usata): Free fino a 50 utenti.
 - Dominio: 0 € finché usi `*.pages.dev`; ~10–15 €/anno se lo compri.
