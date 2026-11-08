@@ -8,23 +8,37 @@
 > pubblico. Vedi la sezione 6.
 
 Tutti i siti deployabili sono stati spostati da GitHub Pages a **Cloudflare
-Pages**. Ogni sito è un progetto separato e viene pubblicato sul proprio
-hostname `*.pages.dev` gratuito. Non serve comprare un dominio.
+Pages**. Ogni sito è un progetto separato. Il dominio personalizzato è
+`didattica.mattia-marini.com`; ogni progetto conserva anche il proprio
+hostname `*.pages.dev` come fallback.
 
 ## Hostname
 
 | Repository | Progetto Cloudflare | URL |
 |---|---|---|
-| `marini-didattica.github.io` | `marini-didattica-site` | <https://marini-didattica-site.pages.dev/> |
-| `materiale` (pubblico/studenti) | `marini-didattica-materiale` | <https://marini-didattica-materiale.pages.dev/> |
-| `materiale` (docente) | `marini-didattica-admin` | <https://marini-didattica-admin.pages.dev/> |
-| `checker` | `marini-didattica-checker` | <https://marini-didattica-checker.pages.dev/> |
-| `slide-seconde` (tutte le slide) | `marini-didattica-slides` | <https://marini-didattica-slides.pages.dev/> |
+| `marini-didattica.github.io` | `marini-didattica-site` | <https://didattica.mattia-marini.com/> |
+| `materiale` (pubblico/studenti) | `marini-didattica-materiale` | <https://materiale.didattica.mattia-marini.com/> |
+| `materiale` (docente) | `marini-didattica-admin` | <https://admin.didattica.mattia-marini.com/> |
+| `checker` | `marini-didattica-checker` | <https://checker.didattica.mattia-marini.com/> |
+| `slides` (tutte le slide) | `marini-didattica-slides` | <https://slides.didattica.mattia-marini.com/> |
 
 I deck sono serviti sotto `/<track>/<deck>/`, ad esempio
-`https://marini-didattica-slides.pages.dev/prime/1-introduzione-python/`.
+`https://slides.didattica.mattia-marini.com/prime/1-introduzione-python/`.
 I vecchi repository `slide-prime`, `slide-olimpiadi` e `slide-extra` sono stati
-uniti in `slide-seconde` e non vengono più deployati.
+uniti in `slides` e non vengono più deployati.
+
+`slides.didattica.mattia-marini.com` è già collegato al progetto Pages ma è in
+attesa del record DNS. Aggiungi in Cloudflare:
+
+```text
+Tipo: CNAME
+Nome: slides
+Destinazione: marini-didattica-slides.pages.dev
+Proxy: Proxied (nuvola arancione)
+```
+
+Finché il CNAME non esiste, i link alle slide usano un host che non risolve.
+Gli hostname `*.pages.dev` restano comunque raggiungibili.
 
 I nomi `pages.dev` sono globali: se uno è già occupato, scegline un altro nel
 dashboard e aggiornalo in:
@@ -125,24 +139,24 @@ Le credenziali sono variabili del progetto Pages, mai nel repository:
 
    ```sh
    # Pagina di login pubblica (ma protetta dal worker: serve una sessione)
-   curl -I https://marini-didattica-admin.pages.dev/login/
+   curl -I https://admin.didattica.mattia-marini.com/login/
    # 200
 
    # /admin/ senza sessione: redirect alla pagina di login
-   curl -I https://marini-didattica-admin.pages.dev/admin/
+   curl -I https://admin.didattica.mattia-marini.com/admin/
    # 303 Location: /login/?next=%2Fadmin%2F
 
    # Login via form (curl) e accesso con il cookie
    curl -i -c /tmp/admin-cookie \
      -d 'username=admin&password=LA_TUA_PASSWORD&next=/admin/' \
-     https://marini-didattica-admin.pages.dev/__admin/login
+     https://admin.didattica.mattia-marini.com/__admin/login
    # 303 Location: /admin/ + Set-Cookie: __Host-admin_session=...
 
-   curl -I -b /tmp/admin-cookie https://marini-didattica-admin.pages.dev/admin/
+   curl -I -b /tmp/admin-cookie https://admin.didattica.mattia-marini.com/admin/
    # 200
 
    # Basic Auth resta disponibile per script
-   curl -u admin:LA_TUA_PASSWORD -I https://marini-didattica-admin.pages.dev/admin/
+   curl -u admin:LA_TUA_PASSWORD -I https://admin.didattica.mattia-marini.com/admin/
    # 200
    ```
 
@@ -183,21 +197,21 @@ Dopo il primo push su `main` di ogni repository:
 
 | Controllo | Atteso |
 |---|---|
-| `https://marini-didattica-admin.pages.dev/login/` senza sessione | `200` (pagina di login) |
-| `https://marini-didattica-admin.pages.dev/admin/` senza sessione | `303` verso `/login/?next=...` |
-| `https://marini-didattica-admin.pages.dev/admin/` con sessione valida | `200` |
+| `https://admin.didattica.mattia-marini.com/login/` senza sessione | `200` (pagina di login) |
+| `https://admin.didattica.mattia-marini.com/admin/` senza sessione | `303` verso `/login/?next=...` |
+| `https://admin.didattica.mattia-marini.com/admin/` con sessione valida | `200` |
 | `https://admin.didattica.mattia-marini.com/admin/` senza sessione | `303` verso `/login/` |
-| `https://marini-didattica-admin.pages.dev/raw/private/MRNMTT03/...` senza sessione | `303` |
-| `https://marini-didattica-admin.pages.dev/login/` | `503` se `ADMIN_USER`/`ADMIN_PASS` mancano |
-| `https://marini-didattica-materiale.pages.dev/login/` | `404` |
-| `https://marini-didattica-materiale.pages.dev/admin/` | `404` |
-| `https://marini-didattica-materiale.pages.dev/raw/private/MRNMTT03/...` | `404` |
-| `https://marini-didattica-materiale.pages.dev/private/<codice>/` | accesso diretto, senza login |
-| `https://marini-didattica-materiale.pages.dev/raw/private/<codice>/...` | accesso diretto |
-| `https://marini-didattica-site.pages.dev/` | sito principale |
-| `https://marini-didattica-site.pages.dev/prime/` | link ai deck su `marini-didattica-slides.pages.dev` |
-| `https://marini-didattica-slides.pages.dev/` | pagina indice con tutti i deck |
-| `https://marini-didattica-slides.pages.dev/prime/1-introduzione-python/` | deck Prime |
+| `https://admin.didattica.mattia-marini.com/raw/private/MRNMTT03/...` senza sessione | `303` |
+| `https://admin.didattica.mattia-marini.com/login/` | `503` se `ADMIN_USER`/`ADMIN_PASS` mancano |
+| `https://materiale.didattica.mattia-marini.com/login/` | `404` |
+| `https://materiale.didattica.mattia-marini.com/admin/` | `404` |
+| `https://materiale.didattica.mattia-marini.com/raw/private/MRNMTT03/...` | `404` |
+| `https://materiale.didattica.mattia-marini.com/private/<codice>/` | accesso diretto, senza login |
+| `https://materiale.didattica.mattia-marini.com/raw/private/<codice>/...` | accesso diretto |
+| `https://didattica.mattia-marini.com/` | sito principale |
+| `https://didattica.mattia-marini.com/prime/` | link ai deck su `marini-didattica-slides.pages.dev` |
+| `https://slides.didattica.mattia-marini.com/` | pagina indice con tutti i deck |
+| `https://slides.didattica.mattia-marini.com/prime/1-introduzione-python/` | deck Prime |
 
 Il codice studente resta un token nell'URL: chi lo riceve apre il materiale,
 senza login. È il modello richiesto.
@@ -208,19 +222,28 @@ Solo dopo aver verificato i nuovi hostname: in ogni repository
 **Settings → Pages → Unpublish site** (o disabilita la source). Il vecchio
 deploy resta online finché non lo rimuovi.
 
-### 9. Dominio personalizzato (opzionale, in seguito)
+### 9. Dominio personalizzato
 
-1. Compra un dominio (circa 10–15 €/anno; `.com` su Cloudflare Registrar è
-   ~11 $/anno, `.it` ~12 € + IVA).
-2. Aggiungilo a Cloudflare e cambia i nameserver presso il registrar.
-3. In ogni progetto Pages: **Custom domains → Set up a domain**, ad esempio
-   `marini-didattica.com`, `materiale.marini-didattica.com`,
-   `admin.marini-didattica.com`, `slides.marini-didattica.com`.
-4. Aggiorna gli stessi file elencati sopra con i nuovi URL.
-5. Non serve una Access application: login e sessione firmata proteggono
-   automaticamente ogni hostname del progetto admin, custom domain compreso.
-   Se aggiungi un dominio personalizzato, verifica che
-   `curl -I https://admin.<dominio>/admin/` risponda `303` verso `/login/`.
+Il dominio è già configurato:
+
+| Dominio | Progetto Pages |
+|---|---|
+| `didattica.mattia-marini.com` | `marini-didattica-site` |
+| `materiale.didattica.mattia-marini.com` | `marini-didattica-materiale` |
+| `admin.didattica.mattia-marini.com` | `marini-didattica-admin` |
+| `checker.didattica.mattia-marini.com` | `marini-didattica-checker` |
+| `slides.didattica.mattia-marini.com` | `marini-didattica-slides` (CNAME da aggiungere) |
+
+Le pagine usano questi URL; gli `*.pages.dev` restano come fallback. Per
+aggiungere un altro dominio: collegalo al progetto Pages, crea il record DNS,
+poi aggiorna `materiale/src/consts.ts`, `marini-didattica.github.io/src/consts.ts`
+e i link nelle pagine `prime.astro`, `seconde.astro`, `olimpiadi.astro`,
+`area-riservata.astro`.
+
+Non serve una Access application: login e sessione firmata proteggono
+automaticamente ogni hostname del progetto admin, custom domain compreso. Se
+aggiungi un dominio personalizzato, verifica che
+`curl -I https://admin.<dominio>/admin/` risponda `303` verso `/login/`.
 
 ## Struttura del deploy `materiale`
 
@@ -256,4 +279,4 @@ il submodule o correggi la chiamata `cover(top: top, ...)` in
   25 MiB per file, richieste statiche illimitate.
 - Login con sessione firmata (Pages Worker): incluso nel piano Free.
 - Cloudflare Access (alternativa SSO, non usata): Free fino a 50 utenti.
-- Dominio: 0 € finché usi `*.pages.dev`; ~10–15 €/anno se lo compri.
+- Dominio: ~10–15 €/anno.
