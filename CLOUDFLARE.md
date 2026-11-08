@@ -1,11 +1,11 @@
 # Migrazione a Cloudflare Pages
 
 > [!WARNING]
-> **Il progetto `marini-didattica-admin` è protetto da HTTP Basic Auth, non da
-> Cloudflare Access.** Se `ADMIN_USER` e `ADMIN_PASS` non sono configurati, il
-> worker risponde `503` (fail closed) e non serve alcun contenuto. La password
-> non va mai nel repository: il repository `materiale` è pubblico. Vedi la
-> sezione 6.
+> **Il progetto `marini-didattica-admin` è protetto da una pagina di login e da
+> una sessione firmata HttpOnly.** Se `ADMIN_USER` e `ADMIN_PASS` non sono
+> configurati, il worker risponde `503` (fail closed) e non serve alcun
+> contenuto. La password non va mai nel repository: il repository `materiale` è
+> pubblico. Vedi la sezione 6.
 
 Tutti i siti deployabili sono stati spostati da GitHub Pages a **Cloudflare
 Pages**. Ogni sito è un progetto separato e viene pubblicato sul proprio
@@ -104,17 +104,19 @@ I file sono già nella storia Git. Dopo aver fatto un backup, valuta la pulizia
 della storia con `git filter-repo` e considera compromessi i codici già
 pubblicati. Le altre repository possono restare pubbliche.
 
-### 6. Configura la password del progetto admin
+### 6. Configura il login del progetto admin
 
-Il progetto admin è protetto **per intero** da HTTP Basic Auth. Il worker
+Il progetto admin è protetto **per intero** da una pagina di login Astro
+(`/login/`) e da una sessione firmata `HttpOnly`. Il worker
 `deploy/admin/_worker.js` viene copiato in `dist-admin/_worker.js` e controlla
-ogni richiesta, inclusi i PDF e i file sotto `/raw/private/`.
+ogni richiesta, inclusi i PDF e i file sotto `/raw/private/`. La pagina di login
+usa lo stesso layout del sito; la build pubblica non la contiene.
 
 Le credenziali sono variabili del progetto Pages, mai nel repository:
 
 1. **Workers & Pages → marini-didattica-admin → Settings → Variables and
    Secrets**.
-2. Nel ambiente **Production** (e **Preview** se usi i preview) aggiungi:
+2. Nell'ambiente **Production** (e **Preview** se usi i preview) aggiungi:
    - `ADMIN_USER` — testo, ad esempio `admin`
    - `ADMIN_PASS` — **secret**, una password lunga e casuale
      (`openssl rand -base64 24`)
@@ -122,21 +124,30 @@ Le credenziali sono variabili del progetto Pages, mai nel repository:
 4. Verifica:
 
    ```sh
-   curl -I https://marini-didattica-admin.pages.dev/admin/
-   # 401 con WWW-Authenticate: Basic
-
-   curl -u admin:LA_TUA_PASSWORD -I https://marini-didattica-admin.pages.dev/admin/
+   # Pagina di login pubblica (ma protetta dal worker: serve una sessione)
+   curl -I https://marini-didattica-admin.pages.dev/login/
    # 200
 
-   curl -I https://admin.didattica.mattia-marini.com/admin/
-   # 401
+   # /admin/ senza sessione: redirect alla pagina di login
+   curl -I https://marini-didattica-admin.pages.dev/admin/
+   # 303 Location: /login/?next=%2Fadmin%2F
 
-   curl -I https://marini-didattica-admin.pages.dev/raw/private/MRNMTT03/...
-   # 401
+   # Login via form (curl) e accesso con il cookie
+   curl -i -c /tmp/admin-cookie \
+     -d 'username=admin&password=LA_TUA_PASSWORD&next=/admin/' \
+     https://marini-didattica-admin.pages.dev/__admin/login
+   # 303 Location: /admin/ + Set-Cookie: __Host-admin_session=...
+
+   curl -I -b /tmp/admin-cookie https://marini-didattica-admin.pages.dev/admin/
+   # 200
+
+   # Basic Auth resta disponibile per script
+   curl -u admin:LA_TUA_PASSWORD -I https://marini-didattica-admin.pages.dev/admin/
+   # 200
    ```
 
    `503` significa che `ADMIN_USER`/`ADMIN_PASS` non sono configurati.
-   `200` senza credenziali significa che il worker non è nel deployment.
+   `200` su `/admin/` senza cookie significa che il worker non è nel deployment.
 
 In alternativa da terminale:
 
@@ -147,8 +158,13 @@ npx wrangler pages secret put ADMIN_PASS --project-name=marini-didattica-admin
 
 Note:
 
-- Basic Auth non ha logout: il browser ricorda le credenziali per la sessione.
-  Per uscire, chiudi tutte le schede o usa una finestra privata.
+- La sessione dura 12 ore. Il pulsante **Esci** nell'area admin cancella il
+  cookie.
+- Il cookie è `__Host-admin_session`, `HttpOnly`, `Secure`, `SameSite=Strict`,
+  firmato con HMAC-SHA256. La chiave deriva da `ADMIN_PASS`: cambiare la
+  password invalida tutte le sessioni.
+- Il cookie è per hostname: il login su `admin.didattica.mattia-marini.com` non
+  vale su `marini-didattica-admin.pages.dev`. È normale.
 - Usa una password lunga e casuale: non c'è blocco dopo tentativi falliti.
   Se vuoi, aggiungi una regola di rate limiting/WAF Cloudflare su
   `admin.didattica.mattia-marini.com`.
@@ -167,11 +183,13 @@ Dopo il primo push su `main` di ogni repository:
 
 | Controllo | Atteso |
 |---|---|
-| `https://marini-didattica-admin.pages.dev/admin/` senza credenziali | `401` con `WWW-Authenticate: Basic` |
-| `https://marini-didattica-admin.pages.dev/admin/` con credenziali | `200` |
-| `https://admin.didattica.mattia-marini.com/admin/` senza credenziali | `401` |
-| `https://marini-didattica-admin.pages.dev/raw/private/MRNMTT03/...` | `401` |
-| `https://marini-didattica-admin.pages.dev/admin/` | `503` se `ADMIN_USER`/`ADMIN_PASS` mancano |
+| `https://marini-didattica-admin.pages.dev/login/` senza sessione | `200` (pagina di login) |
+| `https://marini-didattica-admin.pages.dev/admin/` senza sessione | `303` verso `/login/?next=...` |
+| `https://marini-didattica-admin.pages.dev/admin/` con sessione valida | `200` |
+| `https://admin.didattica.mattia-marini.com/admin/` senza sessione | `303` verso `/login/` |
+| `https://marini-didattica-admin.pages.dev/raw/private/MRNMTT03/...` senza sessione | `303` |
+| `https://marini-didattica-admin.pages.dev/login/` | `503` se `ADMIN_USER`/`ADMIN_PASS` mancano |
+| `https://marini-didattica-materiale.pages.dev/login/` | `404` |
 | `https://marini-didattica-materiale.pages.dev/admin/` | `404` |
 | `https://marini-didattica-materiale.pages.dev/raw/private/MRNMTT03/...` | `404` |
 | `https://marini-didattica-materiale.pages.dev/private/<codice>/` | accesso diretto, senza login |
@@ -199,10 +217,10 @@ deploy resta online finché non lo rimuovi.
    `marini-didattica.com`, `materiale.marini-didattica.com`,
    `admin.marini-didattica.com`, `slides.marini-didattica.com`.
 4. Aggiorna gli stessi file elencati sopra con i nuovi URL.
-5. Non serve una Access application: Basic Auth protegge automaticamente ogni
-   hostname del progetto admin, custom domain compreso. Se aggiungi un dominio
-   personalizzato, verifica che `curl -I https://admin.<dominio>/admin/`
-   risponda `401`.
+5. Non serve una Access application: login e sessione firmata proteggono
+   automaticamente ogni hostname del progetto admin, custom domain compreso.
+   Se aggiungi un dominio personalizzato, verifica che
+   `curl -I https://admin.<dominio>/admin/` risponda `303` verso `/login/`.
 
 ## Struttura del deploy `materiale`
 
@@ -210,9 +228,9 @@ deploy resta online finché non lo rimuovi.
 
 - `dist-public/`: sito pubblico e studenti. **Non contiene** `/admin`, i file
   della cartella staff, né `_worker.js`.
-- `dist-admin/`: copia completa con `/admin`, i file staff e `_worker.js`.
-  Viene pubblicata solo sul progetto `marini-didattica-admin`; il worker
-  applica Basic Auth a ogni richiesta.
+- `dist-admin/`: copia completa con `/admin`, i file staff, `login/` e
+  `_worker.js`. Viene pubblicata solo sul progetto `marini-didattica-admin`; il
+  worker applica login e sessione firmata a ogni richiesta.
 
 La cartella staff è quella con `"staff": true` in `content/students.json`
 (attualmente `admin`, codice `MRNMTT03`). Le pagine pubbliche `/private/<codice>`
@@ -236,6 +254,6 @@ il submodule o correggi la chiamata `cover(top: top, ...)` in
 
 - Cloudflare Pages: piano Free, 500 build/mese, 20.000 file per deploy,
   25 MiB per file, richieste statiche illimitate.
-- Basic Auth con Pages Functions/Worker: incluso nel piano Free.
+- Login con sessione firmata (Pages Worker): incluso nel piano Free.
 - Cloudflare Access (alternativa SSO, non usata): Free fino a 50 utenti.
 - Dominio: 0 € finché usi `*.pages.dev`; ~10–15 €/anno se lo compri.
