@@ -200,7 +200,6 @@ Dopo il primo push su `main` di ogni repository:
 | `https://admin.didattica.mattia-marini.com/login/` senza sessione | `200` (pagina di login) |
 | `https://admin.didattica.mattia-marini.com/admin/` senza sessione | `303` verso `/login/?next=...` |
 | `https://admin.didattica.mattia-marini.com/admin/` con sessione valida | `200` |
-| `https://admin.didattica.mattia-marini.com/admin/` senza sessione | `303` verso `/login/` |
 | `https://admin.didattica.mattia-marini.com/raw/private/MRNMTT03/...` senza sessione | `303` |
 | `https://admin.didattica.mattia-marini.com/login/` | `503` se `ADMIN_USER`/`ADMIN_PASS` mancano |
 | `https://materiale.didattica.mattia-marini.com/login/` | `404` |
@@ -209,7 +208,7 @@ Dopo il primo push su `main` di ogni repository:
 | `https://materiale.didattica.mattia-marini.com/private/<codice>/` | accesso diretto, senza login |
 | `https://materiale.didattica.mattia-marini.com/raw/private/<codice>/...` | accesso diretto |
 | `https://didattica.mattia-marini.com/` | sito principale |
-| `https://didattica.mattia-marini.com/prime/` | link ai deck su `marini-didattica-slides.pages.dev` |
+| `https://didattica.mattia-marini.com/prime/` | link ai deck su `slides.didattica.mattia-marini.com` |
 | `https://slides.didattica.mattia-marini.com/` | pagina indice con tutti i deck |
 | `https://slides.didattica.mattia-marini.com/prime/1-introduzione-python/` | deck Prime |
 
