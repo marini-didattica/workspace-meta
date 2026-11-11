@@ -25,7 +25,8 @@ hostname `*.pages.dev` come fallback.
 I deck sono serviti sotto `/<track>/<deck>/`, ad esempio
 `https://slides.didattica.mattia-marini.com/prime/1-introduzione-python/`.
 I vecchi repository `slide-prime`, `slide-olimpiadi` e `slide-extra` sono stati
-uniti in `slides` e non vengono più deployati.
+uniti in `slides`; i loro siti GitHub Pages ora servono solo un redirect verso
+il nuovo host (vedi [sezione 8](#8-github-pages-resta-acceso-ma-pubblica-solo-redirect)).
 
 `slides.didattica.mattia-marini.com` è già collegato al progetto Pages ma è in
 attesa del record DNS. Aggiungi in Cloudflare:
@@ -215,11 +216,45 @@ Dopo il primo push su `main` di ogni repository:
 Il codice studente resta un token nell'URL: chi lo riceve apre il materiale,
 senza login. È il modello richiesto.
 
-### 8. Spegni GitHub Pages
+### 8. GitHub Pages resta acceso, ma pubblica solo redirect
 
-Solo dopo aver verificato i nuovi hostname: in ogni repository
-**Settings → Pages → Unpublish site** (o disabilita la source). Il vecchio
-deploy resta online finché non lo rimuovi.
+**Non spegnere GitHub Pages.** `marini-didattica.github.io` è l'unico host che
+può servire gli URL `*.github.io`: è quindi l'unico posto dove può vivere il
+redirect dei vecchi link. Cloudflare non può servire quel dominio (vedi
+[Perché non `marini-didattica.github.io`](#perché-non-marini-didatticagithubio)),
+quindi il deploy Cloudflare non può sostituirlo.
+
+Dopo la migrazione ogni repository che aveva un sito Pages pubblica **solo una
+pagina di redirect statica** (`redirect/index.html` + `redirect/404.html`,
+caricata da `.github/workflows/redirect-pages.yml`, nessuna build):
+
+| Repository | Vecchio URL | Destinazione |
+|---|---|---|
+| `marini-didattica.github.io` | <https://marini-didattica.github.io/> | <https://didattica.mattia-marini.com/> |
+| `materiale` | `.../materiale/...` | `materiale.didattica.mattia-marini.com/...` |
+| `misc` | `.../misc/...` | `materiale.../public/...` (con tabella dei file spostati) |
+| `riservato` | `.../riservato/...` | `materiale.../private/...` |
+| `checker` | `.../checker/...` | `checker.didattica.mattia-marini.com/...` |
+| `slide-prime` | `.../slide-prime/<deck>/` | `slides.../prime/<deck>/` |
+| `slide-olimpiadi` | `.../slide-olimpiadi/<deck>/` | `slides.../olimpiadi/<deck>/` |
+| `slide-extra` | `.../slide-extra/<deck>/` | `slides.../extra/<deck>/` |
+| `slide-seconde` (oggi `slides`) | `.../slide-seconde/<deck>/` | `slides.../seconde/<deck>/` (gestito dal 404 del sito radice) |
+
+Note:
+
+- GitHub Pages non può emettere redirect HTTP: la pagina usa
+  `location.replace`. Funziona nei browser, non per crawler o `curl` (che
+  vedono `200`/`404` con il corpo del redirect).
+- Il 404 del sito radice mappa anche i prefissi dei deck. Serve per i
+  repository rinominati (`slide-seconde` → `slides`, `extra-slides` →
+  `slide-extra`), che non hanno più un sito Pages proprio.
+- Il workflow parte solo se cambia `redirect/**` o il workflow stesso
+  (filtro `paths`): un push di contenuto non ridispiega nulla.
+- Se un giorno i vecchi URL non servissero più, per ogni repository:
+  **Settings → Pages → Unpublish site**, poi cancella `redirect/` e
+  `.github/workflows/redirect-pages.yml`.
+- Verifica: `curl -s https://marini-didattica.github.io/slide-prime/1-introduzione-python/`
+  deve contenere `slides.didattica.mattia-marini.com`.
 
 ### 9. Dominio personalizzato
 
