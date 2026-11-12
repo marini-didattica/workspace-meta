@@ -1,5 +1,5 @@
 # Workspace
-This is a multi-repo workspace for school material. The repositories live side by side, each with its own git history and its own GitHub Pages deployment:
+This is a multi-repo workspace for school material. The repositories live side by side, each with its own git history; production sites are deployed to Cloudflare Pages. Layout:
 .
 ├── prime: slidev slide decks (Prime class)
 ├── seconde: slidev slide decks (Seconde class)
@@ -12,7 +12,7 @@ This is a multi-repo workspace for school material. The repositories live side b
 ├── slide-site: astro dashboard linking the published slides and material
 └── workspace-meta: scripts and configuration coordinating the multi-repo agentic workflow
 
-Deck repos consume slidev-theme and slidev-addons as npm git dependencies. prime, seconde, extra-slides and materiale ship GitHub Actions workflows that build their artifact and deploy it to GitHub Pages; slide-site links to the published artifacts. New public or reserved material belongs in materiale, under `content/raw/{public,private}`; don't add content to the legacy misc/riservato repos.
+Deck repos consume slidev-theme and slidev-addons as npm git dependencies. `slide-seconde` (repository `slides`) builds every deck and `materiale` builds the material site; both deploy to Cloudflare Pages from GitHub Actions. The old GitHub Pages sites (`marini-didattica.github.io`, `misc`, `riservato`, `materiale`, `checker`, `slide-prime`, `slide-olimpiadi`, `slide-extra`) are kept on purpose as redirect-only deployments: they are the only way to forward legacy `*.github.io` links to the new domain, so don't remove them (see `workspace-meta/CLOUDFLARE.md`, section 8). New public or reserved material belongs in materiale, under `content/raw/{public,private}`; don't add content to the legacy misc/riservato repos.
 
 Source `workspace-meta/activate.fish` once per shell: it exports `OPENCODE_CONFIG` / `OPENCODE_CONFIG_DIR` and prepends `bin/` to `PATH`.
 
