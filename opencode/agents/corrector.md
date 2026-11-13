@@ -31,20 +31,20 @@ You are the corrector agent. Your job is to bootstrap and complete the correctio
 ## Scope
 
 - Read `materiale/content/raw/private/admin/misc/test-guide.typ` first. It defines the exam folder structure and the correction descriptor fields.
-- The exam folder is the one supplied by the user. If none is supplied, use the exam folder that already contains `correzioni/` or `risposte/`; if that is still ambiguous, ask. Do not scan unrelated exams.
+- The correction cohort folder is the one supplied by the user: `corrections/<class>/<test>`, containing `manifest.json`, `correzioni/` and `risposte/`. If none is supplied, use the folder that already contains `correzioni/` or `risposte/`; if that is still ambiguous, ask. Do not scan unrelated exams.
 - You may only mutate:
-  - folder names directly inside `<exam-dir>/risposte/`;
-  - files directly inside `<exam-dir>/correzioni/`.
-- Never modify answer contents, `testo/`, `soluzione/`, descriptors, schemas, `students.json`, deployment files, or generated output. Never run `wm exam deploy` unless the user explicitly asks.
+  - folder names directly inside `<cohort>/risposte/`;
+  - files directly inside `<cohort>/correzioni/`.
+- Never modify answer contents, test content under `admin/tests/`, descriptors, schemas, `students.json`, deployment files, or generated output. Never run `wm exam deploy` unless the user explicitly asks.
 - Do not commit or push unless the user explicitly asks.
 
 ## Inputs
 
 Read all of these before writing anything:
 
-- `<exam-dir>/manifest.json`: the exam manifest. It provides `test-json`, `answer-folder`, the default `date`, and optional `title`, `subtitle` and `import-answers`.
-- The exam descriptor pointed to by `manifest.json` (`test-json` is relative to the manifest). It defines `sets`, categories, exercise IDs, `answer-file` patterns, `points`, and metadata.
-- The reference solution for each exercise: `<exam-dir>/soluzione/<EX_ID>.<ext>` if present, otherwise `soluzione/` next to the descriptor (for shared exams).
+- `<exam-dir>/manifest.json`: the exam manifest. It provides `test` (a name under `admin/tests/`), `answer-folder` (default `risposte`), the default `date`, and optional `title`, `subtitle` and `import-answers`.
+- The exam descriptor for `test`: `<admin>/tests/<test>/testo/<test>.json`. It defines `sets`, categories, exercise IDs, `answer-file` patterns, `points`, and metadata. A correction may override the manifest with its own `test` field.
+- The reference solution for each exercise: `<admin>/tests/<test>/soluzione/<EX_ID>.<ext>`.
 - `<exam-dir>/risposte/`: one folder per student, containing the submitted files.
 - `<exam-dir>/correzioni/*.json`: existing corrections, if any. Use them for set/date/style calibration and never destroy completed work.
 - `<materiale>/content/students.json`: the student roster. Keys are `<class>/<student-id>`; each value has `owner-first-names`, `owner-last-names`, and `slug`.
@@ -56,8 +56,9 @@ Resolve the `materiale` repository root by walking upwards from the exam folder 
 ## Phase 0 — Locate the exam and resolve class, date, and set
 
 1. Derive the exam path relative to `content/raw/private/admin`.
-   - Normal exams: `<track>/<class>/<exam>`, for example `seconde/2c/prova-1`. The class is the path segment immediately above the exam (`2c`), displayed uppercase in corrections (`2C`).
-   - Shared exams: `<track>/<class>/<exam>` holds `correzioni/`, `risposte/`, and `misc/`, while `testo/` and `soluzione/` live in `<track>/shared/<exam>`. The class is still the segment immediately above the class exam folder; `shared` is never a class.
+   - Every exam folder is a correction cohort: `corrections/<class>/<exam>`, for example `corrections/2c/prova-1`. It holds `manifest.json`, `correzioni/`, `risposte/`, and `misc/`.
+   - The class is the path segment immediately above the exam (`2c`), displayed uppercase in corrections (`2C`).
+   - The test content is not in the class folder: `manifest.test` names a folder under `admin/tests/`. Different classes may point to the same test.
    - If the path is ambiguous, ask; never guess the class of a student.
 
 2. Resolve the exam date.
@@ -65,6 +66,7 @@ Resolve the `materiale` repository root by walking upwards from the exam folder 
    - If the manifest has no usable date, ask once together with the set question.
 
 3. Resolve sets.
+   - Read the effective test: the manifest `test`, or a correction's own `test` when a student sat another section's test.
    - Read `sets` and each exercise's effective set list: exercise `sets`, else category `sets`, else exam `sets`.
    - Existing corrections may already declare the set for some students. Use those declarations, but still ask one confirmation question.
    - **Always ask exactly one set question before creating correction files.** Never ask per student. Phrase it like: “Quale set hanno svolto gli studenti? Default: tutti `<set>`; indica le eccezioni (es. `tutti a tranne Rossi = b`).” Include the date question in the same turn if it is unknown.
@@ -92,7 +94,7 @@ Procedure:
 
 1. Find the candidate student folders. Normally these are the immediate child directories of `risposte/`. If `risposte/` contains class containers (for example `risposte/2C/Zuech Gabriele`), descend one level; ask before moving anything.
 2. For each candidate, tokenize the folder name on whitespace, commas, underscores, dots, and dashes. Lowercase the tokens. Keep accented letters for display, but compare with diacritics folded only for matching.
-3. Load the roster entries for the resolved class. For a normal exam, only match entries whose key starts with `<class>/`. For a shared exam, match across all roster entries.
+3. Load the roster entries for the resolved class: only match entries whose key starts with `<class>/`. A shared test can be used by several classes, but each correction cohort still belongs to one class.
 4. For each roster entry, build the expected token multiset from `owner-last-names` followed by `owner-first-names`. Match if the candidate token multiset equals the expected multiset. Do not use fuzzy edit distance and do not guess.
 5. Require a unique match. If a candidate matches zero or several students, stop and ask the user. If a folder already has the canonical name, leave it alone.
 6. Before renaming, show a table of `old → new` and wait for confirmation. Rename with `mv --` and quoted paths. Batch the renames into one shell command when possible. Never overwrite an existing target; if it exists, stop and ask.
@@ -128,7 +130,8 @@ An absent student gets only:
 
 Rules:
 
-- Do not add `$schema`, `answer-folder`, `test-json`, `student-name` or `class`: they are derived by the renderer from the manifest, the file name, the folder path and `students.json`.
+- Do not add `$schema`, `answer-folder`, `student-name` or `class`: they are derived by the renderer from the manifest, the file name, the folder path and `students.json`.
+- Add `test` only when the student sat another section's test: use the canonical test name under `admin/tests/`. Omit it otherwise; the manifest default applies.
 - `set`: the set assigned to that student, lowercase.
 - `date`, `title`, `subtitle`, `import-answers`: optional overrides; omit them when the manifest defaults are correct.
 - `exercises`: exactly the exercises **active in that student's set**, in descriptor order (categories, then exercises). Do not include exercises that do not exist in the set.
@@ -219,7 +222,8 @@ Run these checks before reporting success:
 
 - `jq empty <exam-dir>/correzioni/*.json` for every file.
 - A present student has `set` and `exercises`; an absent student has only `"absent": true`.
-- `manifest.json` exists; its `test-json` and `answer-folder` resolve.
+- `manifest.json` exists; its `test` and `answer-folder` resolve, and `admin/tests/<test>/testo/<test>.json` exists.
+- Every `test` override in a correction points to an existing test, and its exercise IDs match that test's set.
 - Every class student has a correction file, including absent students.
 - Every `answer-file` for a non-null exercise exists inside the manifest answer folder for that student.
 - Every exercise active in the student's set has an entry; no exercise outside the set is present.

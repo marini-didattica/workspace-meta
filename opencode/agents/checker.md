@@ -30,7 +30,7 @@ You are the checker agent. Your job is to detect suspiciously similar answers in
 
 Read all of these:
 
-- `<exam-dir>/manifest.json` and the exam descriptor it points to through `test-json`. The descriptor defines the sets, exercise IDs, answer-file names, and the canonical exercise order. The manifest also defines the class answer folder.
+- `<exam-dir>/manifest.json` and the exam descriptor it points to through `test` (`<admin>/tests/<test>/testo/<test>.json`). A correction may override it with its own `test` field. The descriptor defines the sets, exercise IDs, answer-file names, and the canonical exercise order. The manifest also defines the class answer folder.
 - `<exam-dir>/correzioni/*.json`: one correction per class student. Use `set` and `exercises.<ID>.answer-file`. A file containing only `{"absent": true}` means the student is absent and must not become a node. Display names come from `content/students.json`.
 - `<exam-dir>/risposte/<student>/`: the student's actual answer files, or the manifest `answer-folder` joined with the student slug.
 - `<exam-dir>/misc/dislocazione.typ`, if present: the seating plan. Rows are `fila` values; positions inside each row are `banco` values. `none` is an empty seat; names listed in `absent` did not take the test. If it is absent, generate the graph without `data.seat` and report that seating was unavailable.

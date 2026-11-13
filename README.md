@@ -47,8 +47,8 @@ wm exam generate-solutions [exam-dir] --out <folder>
                      # generate one solution folder per exam set
 wm exam stats <correzioni-folder> [--out <file>]
                      # generate the class statistics PDF
-wm exam deploy <exam-dir> [--force]
-                     # deploy answer folders and correction stubs
+wm exam deploy <cohort-dir> [--force]
+                     # deploy answer folders
 wm students collect -f <name> --src <dir> [--dest <dir>] [--move]
                      # collect one file/folder from every student
 wm students delete -f <name> --src <dir>
@@ -63,24 +63,25 @@ wm students delete -f <name> --src <dir>
   `correzioni-dir` (defaults to `./correzioni`, or the current directory if it
   does not exist). It writes generated stubs to `<out>/typ` and watched PDFs to
   `<out>/pdf`; `--out` defaults to `/tmp/marini-didattica/exams`.
-- `exam generate-solutions` reads `<exam-dir>/manifest.json` and the exam
-  descriptor it points at. The exercise solutions come from `soluzione/` next
-  to the descriptor, so a class folder can reference a shared exam. For every
-  set declared by the descriptor it writes `<out>/<set>/` and copies each
-  exercise's solution there, renamed according to the descriptor's
-  `answer-file` pattern (`{ordinal}`, `{id}`, `{category}`, `{tag}` and `{set}`
-  are expanded). It fails without writing anything if a solution file is
-  missing.
+- `exam generate-solutions` accepts either a test folder
+  (`admin/tests/<test>`) or a class cohort (`admin/corrections/<class>/<test>`).
+  For a cohort it reads `<exam-dir>/manifest.json` and resolves `test` to
+  `admin/tests/<test>/testo/<test>.json`; the solutions come from
+  `admin/tests/<test>/soluzione/`. For every set declared by the descriptor it
+  writes `<out>/<set>/` and copies each exercise's solution there, renamed
+  according to the descriptor's `answer-file` pattern (`{ordinal}`, `{id}`,
+  `{category}`, `{tag}` and `{set}` are expanded). It fails without writing
+  anything if a solution file is missing.
 - `exam stats` generates the class statistics PDF from a single `correzioni/`
   folder. The sibling `manifest.json`, the exam descriptor and
   `content/students.json` supply everything else. `--out` defaults to the class
   exam's `misc/stats.pdf`.
 - `exam deploy` copies each present student's answers into
-  `content/raw/private/<class>/<student>/<exam>/le-tue-risposte/` and writes a
-  `correzione.typ` stub that points directly at the admin correction
-  descriptor. It no longer copies `correzione.json`, and it skips students
-  whose correction has `"absent": true`. Existing answer files are left
-  untouched unless `--force` is passed.
+  `content/raw/private/<class>/<student>/<exam>/le-tue-risposte/`. It no longer
+  writes a `correzione.typ` stub: the site build generates the correction PDFs
+  for cohorts whose manifest has `"publish": true`. It skips students whose
+  correction has `"absent": true`. Existing answer files are left untouched
+  unless `--force` is passed.
 - `students collect` looks for `<student>/<name>` under `--src` and copies (or
   moves with `--move`) each match to `<dest>/<name>/<student>`. `--dest`
   defaults to `/tmp/marini-didattica/collected`. Relative `--src` paths first
