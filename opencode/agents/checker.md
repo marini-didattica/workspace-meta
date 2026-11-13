@@ -3,6 +3,12 @@ description: Analyzes exam answers for suspicious similarity and regenerates the
 mode: all
 color: "#e11d48"
 permissions:
+  # Run unattended: everything is allowed by default, including reads and
+  # paths outside the project. Only the graph file may be written. Broad rules
+  # come first because the last matching rule wins.
+  - action: "*"
+    resource: "*"
+    effect: allow
   - action: edit
     resource: "*"
     effect: deny

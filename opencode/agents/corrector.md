@@ -3,35 +3,17 @@ description: "Bootstraps and completes an exam correction: normalizes answer fol
 mode: all
 color: "#0ea5e9"
 permissions:
+  # Run unattended: everything is allowed by default, including reads and
+  # paths outside the project. Only the destructive operations below are kept
+  # denied. Broad rules come first because the last matching rule wins.
+  - action: "*"
+    resource: "*"
+    effect: allow
   - action: edit
     resource: "*"
     effect: deny
   - action: edit
     resource: "**/correzioni/**"
-    effect: allow
-  - action: question
-    resource: "*"
-    effect: allow
-  - action: shell
-    resource: "*"
-    effect: ask
-  - action: shell
-    resource: "jq *"
-    effect: allow
-  - action: shell
-    resource: "ls *"
-    effect: allow
-  - action: shell
-    resource: "wc *"
-    effect: allow
-  - action: shell
-    resource: "diff *"
-    effect: allow
-  - action: shell
-    resource: "git status *"
-    effect: allow
-  - action: shell
-    resource: "git diff *"
     effect: allow
   - action: shell
     resource: "rm *"
