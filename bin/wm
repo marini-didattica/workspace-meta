@@ -746,7 +746,8 @@ cmd_exam_deploy() {
 
   local deployed=0
   local skipped=0
-  local absent=0
+  local absent
+  absent="$(jq -r '(.absent // []) | length' "$manifest")"
   local json student key answer_abs target answers_target
   local src_file rel_file dst_file dst_typ dst_json
 
@@ -761,6 +762,12 @@ cmd_exam_deploy() {
 
     if ! jq -e --arg key "$key" 'has($key)' "$students" >/dev/null; then
       die "student '$key' not found in $students"
+    fi
+
+    if jq -e --arg slug "$student" '(.absent // []) | index($slug) != null' \
+      "$manifest" >/dev/null 2>&1; then
+      printf '  skip absent %s (manifest)\n' "$key" >&2
+      continue
     fi
 
     if jq -e '.absent == true' "$json" >/dev/null 2>&1; then

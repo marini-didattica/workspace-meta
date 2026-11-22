@@ -79,9 +79,10 @@ wm students delete -f <name> --src <dir>
 - `exam deploy` copies each present student's answers into
   `content/raw/private/<class>/<student>/<exam>/le-tue-risposte/`. It no longer
   writes a `correzione.typ` stub: the site build generates the correction PDFs
-  for cohorts whose manifest has `"publish": true`. It skips students whose
-  correction has `"absent": true`. Existing answer files are left untouched
-  unless `--force` is passed.
+  for cohorts whose manifest has `"publish": true`. It only deploys students
+  with a correction file, so absentees listed in the manifest `absent` array
+  are skipped automatically. Existing answer files are left untouched unless
+  `--force` is passed.
 - `students collect` looks for `<student>/<name>` under `--src` and copies (or
   moves with `--move`) each match to `<dest>/<name>/<student>`. `--dest`
   defaults to `/tmp/marini-didattica/collected`. Relative `--src` paths first
