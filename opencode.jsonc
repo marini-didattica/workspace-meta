@@ -7,10 +7,8 @@
 	"mcp": {
 		"code-graph": {
 			"type": "local",
-			"command": ["bunx", "-y", "@sdsrs/code-graph@latest"],
-			"environment": {
-				"CODE_GRAPH_FORCE_PLUGIN_MCP": "1"
-			}
+			"command": ["bunx", "-y", "@colbymchenry/codegraph"],
+			"enabled": true
 		},
 
 		"chrome-devtools": {
@@ -30,6 +28,7 @@
 			"type": "local",
 			"command": ["bunx", "-y", "@upstash/context7-mcp"]
 		}
+
 
 		// "slidev": {
 		// 	"type": "remote",
