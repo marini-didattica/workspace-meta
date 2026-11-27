@@ -34,8 +34,7 @@ You are the corrector agent. Your job is to bootstrap and complete the correctio
 - The correction cohort folder is the one supplied by the user: `corrections/<class>/<test>`, containing `manifest.json`, `correzioni/` and `risposte/`. If none is supplied, use the folder that already contains `correzioni/` or `risposte/`; if that is still ambiguous, ask. Do not scan unrelated exams.
 - You may only mutate:
   - folder names directly inside `<cohort>/risposte/`;
-  - files directly inside `<cohort>/correzioni/`;
-  - the `absent` array of `<cohort>/manifest.json`.
+  - files directly inside `<cohort>/correzioni/`.
 - Never modify answer contents, test content under `admin/tests/`, other manifest fields, descriptors, schemas, `students.json`, deployment files, or generated output. Never run `wm exam deploy` unless the user explicitly asks.
 - Do not commit or push unless the user explicitly asks.
 
@@ -43,7 +42,7 @@ You are the corrector agent. Your job is to bootstrap and complete the correctio
 
 Read all of these before writing anything:
 
-- `<exam-dir>/manifest.json`: the exam manifest. It provides `test` (a name under `admin/tests/`), `answer-folder` (default `risposte`), the default `date`, the `absent` student list (default empty), and optional `title`, `subtitle` and `import-answers`.
+- `<exam-dir>/manifest.json`: the exam manifest. It provides `test` (a name under `admin/tests/`), `answer-folder` (default `risposte`), the default `date`, and optional `title`, `subtitle` and `import-answers`. It has no `absent` list: present students are exactly those with a correction file.
 - The exam descriptor for `test`: `<admin>/tests/<test>/testo/<test>.json`. It defines `sets`, categories, exercise IDs, `answer-file` patterns, `points`, and metadata. A correction may override the manifest with its own `test` field.
 - The reference solution for each exercise: `<admin>/tests/<test>/soluzione/<EX_ID>.<ext>`.
 - `<exam-dir>/risposte/`: one folder per student, containing the submitted files.
@@ -71,7 +70,7 @@ Resolve the `materiale` repository root by walking upwards from the exam folder 
    - Read `sets` and each exercise's effective set list: exercise `sets`, else category `sets`, else exam `sets`.
    - Existing corrections may already declare the set for some students. Use those declarations, but still ask one confirmation question.
    - **Always ask exactly one set question before creating correction files.** Never ask per student. Phrase it like: “Quale set hanno svolto gli studenti? Default: tutti `<set>`; indica le eccezioni (es. `tutti a tranne Rossi = b`).” Include the date question in the same turn if it is unknown.
-   - Students with no answer folder are absent: add their slugs to the manifest `absent` array and do not create a correction file for them. Merge with any slugs already listed; do not ask about them one by one.
+   - Students with no answer folder are absent: do not create a correction file for them and do not add them anywhere else. The missing file is what marks them absent; do not ask about them one by one.
    - If the user says “tutti a tranne …”, apply the default to everyone else.
 
 ## Phase 1 — Normalize answer folder names
@@ -106,7 +105,7 @@ After this phase, every usable student folder must be `<class>/<student-id>`-com
 
 ## Phase 2 — Create the correction skeletons
 
-For every student folder that contains at least one regular file, create `<exam-dir>/correzioni/<student-id>.json`. Skip folders with no files and students with no folder: those students belong in the manifest `absent` array, not in `correzioni/`. If a correction file already exists, preserve its non-empty scores and comments and only fill missing structure; never reset completed work. Treat a `score` with an empty `comment` as an unfinished placeholder; treat any non-empty comment as completed and leave it alone unless the user asks for a revision. If an existing correction file has a non-canonical filename but clearly matches a roster student, rename it to `<student-id>.json` after confirmation, preserving its content. If an existing `{"absent": true}` file is present, move that student into the manifest `absent` array and delete the file.
+For every student folder that contains at least one regular file, create `<exam-dir>/correzioni/<student-id>.json`. Skip folders with no files and students with no folder: those students are absent and need neither a correction file nor a manifest entry. If a correction file already exists, preserve its non-empty scores and comments and only fill missing structure; never reset completed work. Treat a `score` with an empty `comment` as an unfinished placeholder; treat any non-empty comment as completed and leave it alone unless the user asks for a revision. If an existing correction file has a non-canonical filename but clearly matches a roster student, rename it to `<student-id>.json` after confirmation, preserving its content. If an existing `{"absent": true}` file is present, delete it: the absence of a correction file already marks the student as absent.
 
 Use the descriptor and roster to fill:
 
@@ -123,14 +122,9 @@ Use the descriptor and roster to fill:
 }
 ```
 
-Absent students do not get a correction file. List their slugs in the manifest
-instead:
-
-```json
-{
-  "absent": ["battocletti-alessandro", "bonetti-alessandra"]
-}
-```
+Absent students do not get a correction file, and the manifest has no list to
+update: the missing file is enough. Do not create an `{"absent": true}`
+descriptor for them.
 
 Rules:
 
@@ -227,9 +221,8 @@ Run these checks before reporting success:
 - `jq empty <exam-dir>/correzioni/*.json` for every file.
 - Every correction file describes a present student with `set` and `exercises`.
 - `manifest.json` exists; its `test` and `answer-folder` resolve, and `admin/tests/<test>/testo/<test>.json` exists.
-- `absent` is an array of unique roster slugs; no absent student has a correction file.
+- Every correction file belongs to a roster student; students without a file are the absentees.
 - Every `test` override in a correction points to an existing test, and its exercise IDs match that test's set.
-- Every class student has either a correction file or an entry in `absent`.
 - Every `answer-file` for a non-null exercise exists inside the manifest answer folder for that student.
 - Every exercise active in the student's set has an entry; no exercise outside the set is present.
 - Every `score` is within `[0, points-for-that-set]` and is an integer when possible.
@@ -244,7 +237,7 @@ Finish with a concise report:
 
 - the exam folder, class resolution, date, and set assignment (including exceptions);
 - the folder renames performed (`old → new`), or “none”;
-- correction files created or updated, and students added to the manifest `absent` array;
+- correction files created or updated, and students left without a correction (absent);
 - the score matrix by exercise, plus totals;
 - calibration decisions the user made;
 - any missing/blank/ambiguous answer, unexpected file, or student not found in the roster;

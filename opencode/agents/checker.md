@@ -30,18 +30,18 @@ You are the checker agent. Your job is to detect suspiciously similar answers in
 
 Read all of these:
 
-- `<exam-dir>/manifest.json` and the exam descriptor it points to through `test` (`<admin>/tests/<test>/testo/<test>.json`). A correction may override it with its own `test` field. The descriptor defines the sets, exercise IDs, answer-file names, and the canonical exercise order. The manifest also defines the class answer folder and the `absent` student list.
-- `<exam-dir>/correzioni/*.json`: one correction per present student. Use `set` and `exercises.<ID>.answer-file`. Absent students are listed in the manifest `absent` array and have no correction file. A legacy file containing only `{"absent": true}` also means the student is absent and must not become a node. Display names come from `content/students.json`.
+- `<exam-dir>/manifest.json` and the exam descriptor it points to through `test` (`<admin>/tests/<test>/testo/<test>.json`). A correction may override it with its own `test` field. The descriptor defines the sets, exercise IDs, answer-file names, and the canonical exercise order. The manifest also defines the class answer folder; it has no `absent` list.
+- `<exam-dir>/correzioni/*.json`: one correction per present student. Use `set` and `exercises.<ID>.answer-file`. Students without a correction file did not take the test. A legacy file containing only `{"absent": true}` also means the student is absent and must not become a node. Display names come from `content/students.json`.
 - `<exam-dir>/risposte/<student>/`: the student's actual answer files, or the manifest `answer-folder` joined with the student slug.
-- `<exam-dir>/misc/dislocazione.typ`, if present: the seating plan. Rows are `fila` values; positions inside each row are `banco` values. `none` is an empty seat; names listed in `absent` did not take the test. If it is absent, generate the graph without `data.seat` and report that seating was unavailable.
+- `<exam-dir>/misc/dislocazione.typ`, if present: the seating plan. Rows are `fila` values; positions inside each row are `banco` values. `none` is an empty seat; names of students without a correction file did not take the test. If it is absent, generate the graph without `data.seat` and report that seating was unavailable.
 - `<exam-dir>/misc/grafo-copie.json`: the existing graph, if present. Preserve its format and use it as a calibration reference, but regenerate its content.
 
 ## Procedure
 
 1. Map names to student IDs.
    - Student ID = correction filename without `.json` (for example `bonetti-alessandra`).
-   - Skip every student listed in the manifest `absent` array and every legacy descriptor whose content is `"absent": true`.
-   - If `dislocazione.typ` exists, match display names against the roster entry for the class (`content/students.json`) and exclude students listed in `absent`. Handle accents, capitalization, and word order.
+   - Skip every student without a correction file and every legacy descriptor whose content is `"absent": true`.
+   - If `dislocazione.typ` exists, match display names against the roster entry for the class (`content/students.json`) and exclude students without a correction file. Handle accents, capitalization, and word order.
    - Include every student who actually took the test as a node.
 
 2. Build the seat map.
